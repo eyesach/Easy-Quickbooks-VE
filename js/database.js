@@ -80,6 +80,8 @@ const Database = {
                 month_paid TEXT,
                 payment_for_month TEXT,
                 notes TEXT,
+                source_type TEXT,
+                source_id INTEGER,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (category_id) REFERENCES categories(id)
@@ -109,6 +111,27 @@ const Database = {
                 purchase_cost DECIMAL(10,2) NOT NULL,
                 useful_life_months INTEGER NOT NULL,
                 purchase_date DATE NOT NULL,
+                salvage_value DECIMAL(10,2) DEFAULT 0,
+                depreciation_method TEXT DEFAULT 'straight_line',
+                dep_start_date DATE,
+                is_depreciable INTEGER DEFAULT 1,
+                linked_transaction_id INTEGER,
+                notes TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        this.db.run(`
+            CREATE TABLE IF NOT EXISTS loans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                principal DECIMAL(10,2) NOT NULL,
+                annual_rate DECIMAL(8,4) NOT NULL,
+                term_months INTEGER NOT NULL,
+                payments_per_year INTEGER NOT NULL DEFAULT 12,
+                start_date DATE NOT NULL,
+                notes TEXT,
+                is_active INTEGER NOT NULL DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         `);
@@ -261,6 +284,70 @@ const Database = {
         if (migrated.length === 0 || migrated[0].values.length === 0) {
             this.db.run('UPDATE categories SET show_on_pl = 0');
             this.db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('pl_hide_migration', '1')");
+        }
+
+        // === New columns on balance_sheet_assets ===
+        try { this.db.exec('SELECT salvage_value FROM balance_sheet_assets LIMIT 1'); }
+        catch (e) { this.db.run('ALTER TABLE balance_sheet_assets ADD COLUMN salvage_value DECIMAL(10,2) DEFAULT 0'); }
+
+        try { this.db.exec('SELECT depreciation_method FROM balance_sheet_assets LIMIT 1'); }
+        catch (e) { this.db.run("ALTER TABLE balance_sheet_assets ADD COLUMN depreciation_method TEXT DEFAULT 'straight_line'"); }
+
+        try { this.db.exec('SELECT dep_start_date FROM balance_sheet_assets LIMIT 1'); }
+        catch (e) { this.db.run('ALTER TABLE balance_sheet_assets ADD COLUMN dep_start_date DATE'); }
+
+        try { this.db.exec('SELECT is_depreciable FROM balance_sheet_assets LIMIT 1'); }
+        catch (e) { this.db.run('ALTER TABLE balance_sheet_assets ADD COLUMN is_depreciable INTEGER DEFAULT 1'); }
+
+        try { this.db.exec('SELECT linked_transaction_id FROM balance_sheet_assets LIMIT 1'); }
+        catch (e) { this.db.run('ALTER TABLE balance_sheet_assets ADD COLUMN linked_transaction_id INTEGER'); }
+
+        try { this.db.exec('SELECT notes FROM balance_sheet_assets LIMIT 1'); }
+        catch (e) { this.db.run('ALTER TABLE balance_sheet_assets ADD COLUMN notes TEXT'); }
+
+        // === source_type and source_id on transactions ===
+        try { this.db.exec('SELECT source_type FROM transactions LIMIT 1'); }
+        catch (e) { this.db.run('ALTER TABLE transactions ADD COLUMN source_type TEXT'); }
+
+        try { this.db.exec('SELECT source_id FROM transactions LIMIT 1'); }
+        catch (e) { this.db.run('ALTER TABLE transactions ADD COLUMN source_id INTEGER'); }
+
+        // === Create loans table ===
+        this.db.run(`
+            CREATE TABLE IF NOT EXISTS loans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                principal DECIMAL(10,2) NOT NULL,
+                annual_rate DECIMAL(8,4) NOT NULL,
+                term_months INTEGER NOT NULL,
+                payments_per_year INTEGER NOT NULL DEFAULT 12,
+                start_date DATE NOT NULL,
+                notes TEXT,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // === Migrate loan_config JSON → loans table row ===
+        const loanMigrated = this.db.exec("SELECT value FROM app_meta WHERE key = 'loans_migration_v1'");
+        if (loanMigrated.length === 0 || loanMigrated[0].values.length === 0) {
+            const loanCfg = this.db.exec("SELECT value FROM app_meta WHERE key = 'loan_config'");
+            if (loanCfg.length > 0 && loanCfg[0].values.length > 0) {
+                try {
+                    const cfg = JSON.parse(loanCfg[0].values[0][0]);
+                    if (cfg && cfg.principal && cfg.start_date) {
+                        const termMonths = (cfg.term_months) ? cfg.term_months : (cfg.term_years ? cfg.term_years * 12 : 0);
+                        this.db.run(
+                            `INSERT INTO loans (name, principal, annual_rate, term_months, payments_per_year, start_date)
+                             VALUES (?, ?, ?, ?, ?, ?)`,
+                            ['Primary Loan', cfg.principal, cfg.annual_rate, termMonths, cfg.payments_per_year || 12, cfg.start_date]
+                        );
+                    }
+                } catch (e) {
+                    console.warn('Failed to migrate loan_config:', e);
+                }
+            }
+            this.db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('loans_migration_v1', '1')");
         }
     },
 
@@ -521,8 +608,9 @@ const Database = {
         this.db.run(`
             INSERT INTO transactions
             (entry_date, category_id, item_description, amount, pretax_amount, transaction_type,
-             status, date_processed, month_due, month_paid, payment_for_month, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             status, date_processed, month_due, month_paid, payment_for_month, notes,
+             source_type, source_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             transaction.entry_date,
             transaction.category_id,
@@ -535,7 +623,9 @@ const Database = {
             transaction.month_due || null,
             transaction.month_paid || null,
             transaction.payment_for_month || null,
-            transaction.notes || null
+            transaction.notes || null,
+            transaction.source_type || null,
+            transaction.source_id || null
         ]);
 
         const result = this.db.exec('SELECT last_insert_rowid() as id');
@@ -918,7 +1008,17 @@ const Database = {
         `);
         const depreciation = depreciationResult.length > 0 ? this.rowsToObjects(depreciationResult[0]) : [];
 
-        return { months, revenue, cogs, opex, depreciation };
+        // Computed asset depreciation and loan interest by month
+        const assetDeprByMonth = this.getAssetDepreciationByMonth(null);
+        const loanInterestByMonth = this.getLoanInterestByMonth(null);
+
+        // Merge their month keys into the master months array
+        const allMonths = new Set(months);
+        Object.keys(assetDeprByMonth).forEach(m => allMonths.add(m));
+        Object.keys(loanInterestByMonth).forEach(m => allMonths.add(m));
+        const mergedMonths = Array.from(allMonths).sort();
+
+        return { months: mergedMonths, revenue, cogs, opex, depreciation, assetDeprByMonth, loanInterestByMonth };
     },
 
     /**
@@ -1023,12 +1123,18 @@ const Database = {
      * @param {number} purchaseCost - Purchase cost
      * @param {number} usefulLifeMonths - Useful life in months
      * @param {string} purchaseDate - Purchase date (YYYY-MM-DD)
+     * @param {number} salvageValue - Salvage value
+     * @param {string} depreciationMethod - 'straight_line' | 'double_declining' | 'none'
+     * @param {string|null} depStartDate - Depreciation start date (YYYY-MM-DD) or null
+     * @param {boolean} isDepreciable - Whether the asset depreciates
+     * @param {string|null} notes - Notes
      * @returns {number} New asset ID
      */
-    addFixedAsset(name, purchaseCost, usefulLifeMonths, purchaseDate) {
+    addFixedAsset(name, purchaseCost, usefulLifeMonths, purchaseDate, salvageValue = 0, depreciationMethod = 'straight_line', depStartDate = null, isDepreciable = true, notes = null) {
         this.db.run(
-            'INSERT INTO balance_sheet_assets (name, purchase_cost, useful_life_months, purchase_date) VALUES (?, ?, ?, ?)',
-            [name.trim(), purchaseCost, usefulLifeMonths, purchaseDate]
+            `INSERT INTO balance_sheet_assets (name, purchase_cost, useful_life_months, purchase_date, salvage_value, depreciation_method, dep_start_date, is_depreciable, notes)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [name.trim(), purchaseCost, usefulLifeMonths, purchaseDate, salvageValue, depreciationMethod, depStartDate, isDepreciable ? 1 : 0, notes]
         );
         const result = this.db.exec('SELECT last_insert_rowid() as id');
         this.autoSave();
@@ -1042,20 +1148,28 @@ const Database = {
      * @param {number} purchaseCost - Purchase cost
      * @param {number} usefulLifeMonths - Useful life in months
      * @param {string} purchaseDate - Purchase date (YYYY-MM-DD)
+     * @param {number} salvageValue - Salvage value
+     * @param {string} depreciationMethod - Depreciation method
+     * @param {string|null} depStartDate - Depreciation start date
+     * @param {boolean} isDepreciable - Whether the asset depreciates
+     * @param {string|null} notes - Notes
      */
-    updateFixedAsset(id, name, purchaseCost, usefulLifeMonths, purchaseDate) {
+    updateFixedAsset(id, name, purchaseCost, usefulLifeMonths, purchaseDate, salvageValue = 0, depreciationMethod = 'straight_line', depStartDate = null, isDepreciable = true, notes = null) {
         this.db.run(
-            'UPDATE balance_sheet_assets SET name = ?, purchase_cost = ?, useful_life_months = ?, purchase_date = ? WHERE id = ?',
-            [name.trim(), purchaseCost, usefulLifeMonths, purchaseDate, id]
+            `UPDATE balance_sheet_assets SET name = ?, purchase_cost = ?, useful_life_months = ?, purchase_date = ?,
+             salvage_value = ?, depreciation_method = ?, dep_start_date = ?, is_depreciable = ?, notes = ? WHERE id = ?`,
+            [name.trim(), purchaseCost, usefulLifeMonths, purchaseDate, salvageValue, depreciationMethod, depStartDate, isDepreciable ? 1 : 0, notes, id]
         );
         this.autoSave();
     },
 
     /**
-     * Delete a fixed asset
+     * Delete a fixed asset (and its linked transaction if any)
      * @param {number} id - Asset ID
      */
     deleteFixedAsset(id) {
+        // Remove linked transaction
+        this.db.run("DELETE FROM transactions WHERE source_type = 'asset_purchase' AND source_id = ?", [id]);
         this.db.run('DELETE FROM balance_sheet_assets WHERE id = ?', [id]);
         this.autoSave();
     },
@@ -1069,6 +1183,126 @@ const Database = {
         const results = this.db.exec('SELECT * FROM balance_sheet_assets WHERE id = ?', [id]);
         if (results.length === 0) return null;
         return this.rowsToObjects(results[0])[0];
+    },
+
+    /**
+     * Link a transaction ID to a fixed asset
+     * @param {number} assetId - Asset ID
+     * @param {number} transactionId - Transaction ID
+     */
+    linkTransactionToAsset(assetId, transactionId) {
+        this.db.run('UPDATE balance_sheet_assets SET linked_transaction_id = ? WHERE id = ?', [transactionId, assetId]);
+        this.autoSave();
+    },
+
+    /**
+     * Get aggregated asset depreciation by month.
+     * For each depreciable asset, computes its schedule and aggregates.
+     * @param {string|null} asOfMonth - If provided, only returns months <= asOfMonth
+     * @returns {Object} Map of { [YYYY-MM]: totalDepreciation }
+     */
+    getAssetDepreciationByMonth(asOfMonth) {
+        const assets = this.getFixedAssets();
+        const result = {};
+
+        assets.forEach(asset => {
+            const schedule = Utils.computeDepreciationSchedule(asset);
+            Object.entries(schedule).forEach(([month, amount]) => {
+                if (asOfMonth && month > asOfMonth) return;
+                result[month] = Math.round(((result[month] || 0) + amount) * 100) / 100;
+            });
+        });
+
+        return result;
+    },
+
+    // ==================== LOANS ====================
+
+    /**
+     * Get all active loans
+     * @returns {Array} Array of loan objects
+     */
+    getLoans() {
+        const results = this.db.exec('SELECT * FROM loans WHERE is_active = 1 ORDER BY start_date ASC');
+        if (results.length === 0) return [];
+        return this.rowsToObjects(results[0]);
+    },
+
+    /**
+     * Get a loan by ID
+     * @param {number} id - Loan ID
+     * @returns {Object|null} Loan object
+     */
+    getLoanById(id) {
+        const results = this.db.exec('SELECT * FROM loans WHERE id = ?', [id]);
+        if (results.length === 0) return null;
+        return this.rowsToObjects(results[0])[0];
+    },
+
+    /**
+     * Add a new loan
+     * @param {Object} params - { name, principal, annual_rate, term_months, payments_per_year, start_date, notes }
+     * @returns {number} New loan ID
+     */
+    addLoan(params) {
+        this.db.run(
+            `INSERT INTO loans (name, principal, annual_rate, term_months, payments_per_year, start_date, notes)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [params.name.trim(), params.principal, params.annual_rate, params.term_months, params.payments_per_year || 12, params.start_date, params.notes || null]
+        );
+        const result = this.db.exec('SELECT last_insert_rowid() as id');
+        this.autoSave();
+        return result[0].values[0][0];
+    },
+
+    /**
+     * Update a loan
+     * @param {number} id - Loan ID
+     * @param {Object} params - Fields to update
+     */
+    updateLoan(id, params) {
+        this.db.run(
+            `UPDATE loans SET name = ?, principal = ?, annual_rate = ?, term_months = ?,
+             payments_per_year = ?, start_date = ?, notes = ? WHERE id = ?`,
+            [params.name.trim(), params.principal, params.annual_rate, params.term_months, params.payments_per_year || 12, params.start_date, params.notes || null, id]
+        );
+        this.autoSave();
+    },
+
+    /**
+     * Soft-delete a loan
+     * @param {number} id - Loan ID
+     */
+    deleteLoan(id) {
+        this.db.run('UPDATE loans SET is_active = 0 WHERE id = ?', [id]);
+        this.autoSave();
+    },
+
+    /**
+     * Get aggregated loan interest by month across all active loans.
+     * @param {string|null} asOfMonth - If provided, only returns months <= asOfMonth
+     * @returns {Object} Map of { [YYYY-MM]: totalInterest }
+     */
+    getLoanInterestByMonth(asOfMonth) {
+        const loans = this.getLoans();
+        const result = {};
+
+        loans.forEach(loan => {
+            const schedule = Utils.computeAmortizationSchedule({
+                principal: loan.principal,
+                annual_rate: loan.annual_rate,
+                term_months: loan.term_months,
+                payments_per_year: loan.payments_per_year,
+                start_date: loan.start_date
+            });
+
+            schedule.forEach(entry => {
+                if (asOfMonth && entry.month > asOfMonth) return;
+                result[entry.month] = Math.round(((result[entry.month] || 0) + entry.interest) * 100) / 100;
+            });
+        });
+
+        return result;
     },
 
     // ==================== EQUITY & LOAN CONFIG ====================
@@ -1113,7 +1347,7 @@ const Database = {
     },
 
     /**
-     * Set loan config
+     * Set loan config (kept for backward compat)
      * @param {Object|null} config - Loan config object or null to clear
      */
     setLoanConfig(config) {
@@ -1123,6 +1357,54 @@ const Database = {
             this.db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('loan_config', ?)", [JSON.stringify(config)]);
         }
         this.autoSave();
+    },
+
+    // ==================== INVESTORS ====================
+
+    /**
+     * Get investors array from equity_config
+     * @returns {Array} Array of investor objects
+     */
+    getInvestors() {
+        const config = this.getEquityConfig();
+        return config.investors || [];
+    },
+
+    /**
+     * Add an investor to equity_config
+     * @param {Object} investor - { id, name, shares, price_per_share, investment_date }
+     */
+    addInvestor(investor) {
+        const config = this.getEquityConfig();
+        if (!config.investors) config.investors = [];
+        investor.id = investor.id || 'inv_' + Date.now();
+        config.investors.push(investor);
+        this.setEquityConfig(config);
+    },
+
+    /**
+     * Update an investor in equity_config
+     * @param {string} id - Investor ID
+     * @param {Object} data - Fields to update
+     */
+    updateInvestor(id, data) {
+        const config = this.getEquityConfig();
+        if (!config.investors) return;
+        const idx = config.investors.findIndex(inv => inv.id === id);
+        if (idx === -1) return;
+        Object.assign(config.investors[idx], data);
+        this.setEquityConfig(config);
+    },
+
+    /**
+     * Delete an investor from equity_config
+     * @param {string} id - Investor ID
+     */
+    deleteInvestor(id) {
+        const config = this.getEquityConfig();
+        if (!config.investors) return;
+        config.investors = config.investors.filter(inv => inv.id !== id);
+        this.setEquityConfig(config);
     },
 
     // ==================== BALANCE SHEET QUERIES ====================
@@ -1207,13 +1489,22 @@ const Database = {
      * @returns {number} Retained earnings (cumulative net income after tax)
      */
     getRetainedEarningsAsOf(asOfMonth, taxMode) {
-        // Get all months up to and including asOfMonth
+        // Get all months up to and including asOfMonth (from transactions)
         const monthsResult = this.db.exec(`
             SELECT DISTINCT t.month_due as month FROM transactions t
             WHERE t.month_due IS NOT NULL AND t.month_due <= ?
             ORDER BY month ASC
         `, [asOfMonth]);
-        const months = monthsResult.length > 0 ? monthsResult[0].values.map(r => r[0]) : [];
+        const txMonths = monthsResult.length > 0 ? monthsResult[0].values.map(r => r[0]) : [];
+
+        // Also include months from asset depreciation and loan interest
+        const assetDeprByMonth = this.getAssetDepreciationByMonth(asOfMonth);
+        const loanInterestByMonth = this.getLoanInterestByMonth(asOfMonth);
+
+        const allMonths = new Set(txMonths);
+        Object.keys(assetDeprByMonth).forEach(m => allMonths.add(m));
+        Object.keys(loanInterestByMonth).forEach(m => allMonths.add(m));
+        const months = Array.from(allMonths).sort();
 
         if (months.length === 0) return 0;
 
@@ -1280,6 +1571,7 @@ const Database = {
         const opexMap = buildMap(opex);
 
         // Compute cumulative net income
+        const round2 = (v) => Math.round(v * 100) / 100;
         let cumulative = 0;
 
         // Get unique category IDs per section from transactions
@@ -1322,20 +1614,30 @@ const Database = {
                 monthOpex += getVal(catId, month, opexMap[`${catId}-${month}`] || 0);
             });
 
-            // Depreciation from overrides
+            // Depreciation from overrides (manual depreciation categories)
             deprCats.forEach(catId => {
                 monthOpex += getVal(catId, month, 0);
             });
 
-            const nibt = monthRev - monthCogs - monthOpex;
+            // Asset depreciation (computed from fixed assets)
+            if (assetDeprByMonth[month]) {
+                monthOpex += assetDeprByMonth[month];
+            }
+
+            // Loan interest (computed from active loans)
+            if (loanInterestByMonth[month]) {
+                monthOpex += loanInterestByMonth[month];
+            }
+
+            const nibt = round2(monthRev - monthCogs - monthOpex);
 
             let tax = 0;
             if (taxMode === 'corporate') {
-                const autoTax = nibt > 0 ? nibt * 0.21 : 0;
+                const autoTax = round2(nibt > 0 ? nibt * 0.21 : 0);
                 tax = getVal(-1, month, autoTax);
             }
 
-            cumulative += nibt - tax;
+            cumulative = round2(cumulative + nibt - tax);
         });
 
         return cumulative;

@@ -791,7 +791,7 @@ const UI = {
      */
     renderProfitLossSpreadsheet(plData, overrides, taxMode) {
         const container = document.getElementById('pnlSpreadsheet');
-        const { months, revenue, cogs, opex, depreciation } = plData;
+        const { months, revenue, cogs, opex, depreciation, assetDeprByMonth, loanInterestByMonth } = plData;
 
         if (months.length === 0) {
             container.innerHTML = '<p class="empty-state">No transactions with a month due yet.</p>';
@@ -950,6 +950,32 @@ const UI = {
             html += `<td>${fmtAmt(rowTotal)}</td></tr>`;
         });
 
+        // Computed: Depreciation from Fixed Assets tab
+        if (assetDeprByMonth && Object.keys(assetDeprByMonth).length > 0) {
+            let rowTotal = 0;
+            html += '<tr class="pnl-indent pnl-computed-row"><td>Depreciation (Fixed Assets)</td>';
+            months.forEach(m => {
+                const val = assetDeprByMonth[m] || 0;
+                monthOpex[m] += val;
+                rowTotal += val;
+                html += `<td>${fmtAmt(val)}</td>`;
+            });
+            html += `<td>${fmtAmt(rowTotal)}</td></tr>`;
+        }
+
+        // Computed: Interest Expense from Loans
+        if (loanInterestByMonth && Object.keys(loanInterestByMonth).length > 0) {
+            let rowTotal = 0;
+            html += '<tr class="pnl-indent pnl-computed-row"><td>Interest Expense (Loans)</td>';
+            months.forEach(m => {
+                const val = loanInterestByMonth[m] || 0;
+                monthOpex[m] += val;
+                rowTotal += val;
+                html += `<td>${fmtAmt(val)}</td>`;
+            });
+            html += `<td>${fmtAmt(rowTotal)}</td></tr>`;
+        }
+
         // Total Operating Expenses
         let totalOpex = 0;
         html += '<tr class="pnl-subtotal"><td>Total Operating Expenses</td>';
@@ -1057,23 +1083,7 @@ const UI = {
             html += '<tr class="bs-indent"><td style="color:var(--color-text-muted);font-style:italic;">No fixed assets</td><td></td></tr>';
         } else {
             data.assetDetails.forEach(asset => {
-                html += `<tr class="bs-indent"><td>
-                    ${Utils.escapeHtml(asset.name)}
-                    <span class="bs-asset-actions">
-                        <button class="btn-icon edit-asset-btn" data-id="${asset.id}" title="Edit">
-                            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                            </svg>
-                        </button>
-                        <button class="btn-icon delete-asset-btn" data-id="${asset.id}" title="Delete">
-                            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <polyline points="3 6 5 6 21 6"></polyline>
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                            </svg>
-                        </button>
-                    </span>
-                </td><td>${fmtAmt(asset.purchase_cost)}</td></tr>`;
+                html += `<tr class="bs-indent"><td>${Utils.escapeHtml(asset.name)}</td><td>${fmtAmt(asset.purchase_cost)}</td></tr>`;
             });
         }
 
@@ -1099,9 +1109,16 @@ const UI = {
         html += `<tr class="bs-subtotal"><td>Total Current Liabilities</td><td>${fmtAmt(totalCurrentLiabilities)}</td></tr>`;
 
         // Long-Term Liabilities
-        if (data.loanBalance > 0) {
+        if (data.loanDetails && data.loanDetails.length > 0) {
             html += '<tr class="bs-subsection"><td colspan="2">Long-Term Liabilities</td></tr>';
-            html += `<tr class="bs-indent"><td>Bank Loans Payable</td><td>${fmtAmt(data.loanBalance)}</td></tr>`;
+            data.loanDetails.forEach(loan => {
+                if (loan.balance > 0) {
+                    html += `<tr class="bs-indent"><td>${Utils.escapeHtml(loan.name)}</td><td>${fmtAmt(loan.balance)}</td></tr>`;
+                }
+            });
+            if (data.totalLoanBalance > 0) {
+                html += `<tr class="bs-indent" style="font-weight:500;"><td>Total Loans Payable</td><td>${fmtAmt(data.totalLoanBalance)}</td></tr>`;
+            }
         }
 
         html += `<tr class="bs-subtotal"><td>Total Liabilities</td><td>${fmtAmt(data.totalLiabilities)}</td></tr>`;
@@ -1113,6 +1130,13 @@ const UI = {
         html += '<tr class="bs-section-header"><td colspan="2">Stockholders\' Equity</td></tr>';
         html += `<tr class="bs-indent"><td>Common Stock</td><td>${fmtAmt(data.commonStock)}</td></tr>`;
         html += `<tr class="bs-indent"><td>Additional Paid-In Capital</td><td>${fmtAmt(data.apic)}</td></tr>`;
+        if (data.investorDetails && data.investorDetails.length > 0) {
+            html += '<tr class="bs-indent" style="font-style:italic;color:var(--color-text-muted);"><td colspan="2">Investors:</td></tr>';
+            data.investorDetails.forEach(inv => {
+                const invTotal = inv.shares * inv.price_per_share;
+                html += `<tr class="bs-indent" style="padding-left:32px;"><td style="padding-left:24px;">${Utils.escapeHtml(inv.name)} (${inv.shares.toLocaleString()} shares)</td><td>${fmtAmt(invTotal)}</td></tr>`;
+            });
+        }
         html += `<tr class="bs-indent"><td>Retained Earnings</td><td>${fmtAmt(data.retainedEarnings)}</td></tr>`;
         html += `<tr class="bs-subtotal"><td>Total Stockholders' Equity</td><td>${fmtAmt(data.totalEquity)}</td></tr>`;
 
@@ -1133,20 +1157,155 @@ const UI = {
     },
 
     /**
-     * Render the Loan Amortization schedule
-     * @param {Object} config - Loan config
-     * @param {Array} schedule - Amortization schedule array
-     * @param {number} totalInterest - Total interest paid
-     * @param {number} totalPaid - Total amount paid
+     * Render the Fixed Assets tab with list/detail layout
+     * @param {Array} assets - Array of asset objects
+     * @param {number|null} selectedAssetId - Currently selected asset ID
      */
-    renderLoanAmortization(config, schedule, totalInterest, totalPaid) {
-        const container = document.getElementById('loanContent');
+    renderFixedAssetsTab(assets, selectedAssetId) {
         const fmtAmt = (amt) => Utils.formatCurrency(amt);
 
+        // Summary cards
+        let totalCost = 0, totalAccumDepr = 0;
+        assets.forEach(asset => {
+            totalCost += asset.purchase_cost;
+            const schedule = Utils.computeDepreciationSchedule(asset);
+            const currentMonth = Utils.getCurrentMonth();
+            let accumDepr = 0;
+            Object.entries(schedule).forEach(([m, amt]) => {
+                if (m <= currentMonth) accumDepr += amt;
+            });
+            asset._accumDepr = accumDepr;
+            asset._nbv = asset.purchase_cost - accumDepr;
+            totalAccumDepr += accumDepr;
+        });
+
+        const summaryContainer = document.getElementById('assetsSummaryCards');
+        summaryContainer.innerHTML = `
+            <div class="assets-summary-card"><span class="assets-summary-label">Total Cost</span><span class="assets-summary-value">${fmtAmt(totalCost)}</span></div>
+            <div class="assets-summary-card"><span class="assets-summary-label">Accum. Depreciation</span><span class="assets-summary-value amount-payable">${fmtAmt(totalAccumDepr)}</span></div>
+            <div class="assets-summary-card"><span class="assets-summary-label">Net Book Value</span><span class="assets-summary-value">${fmtAmt(totalCost - totalAccumDepr)}</span></div>
+        `;
+
+        // Left panel: asset list
+        const listPanel = document.getElementById('assetsListPanel');
+        if (assets.length === 0) {
+            listPanel.innerHTML = '<p class="empty-state">No fixed assets yet. Click "+ Add Asset" to begin.</p>';
+        } else {
+            listPanel.innerHTML = assets.map(asset => {
+                const selected = asset.id === selectedAssetId ? ' selected' : '';
+                const methodLabel = asset.depreciation_method === 'none' ? 'Non-depreciable'
+                    : asset.depreciation_method === 'double_declining' ? 'DDB' : 'SL';
+                return `<div class="asset-list-item${selected}" data-id="${asset.id}">
+                    <div class="asset-list-name">${Utils.escapeHtml(asset.name)}</div>
+                    <div class="asset-list-meta">${fmtAmt(asset.purchase_cost)} &middot; ${methodLabel}</div>
+                    <div class="asset-list-actions">
+                        <button class="btn-icon edit-asset-btn" data-id="${asset.id}" title="Edit">&#9998;</button>
+                        <button class="btn-icon delete-asset-btn" data-id="${asset.id}" title="Delete">&times;</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // Right panel: selected asset detail
+        const detailPanel = document.getElementById('assetsDetailPanel');
+        const selectedAsset = assets.find(a => a.id === selectedAssetId);
+        if (!selectedAsset) {
+            detailPanel.innerHTML = '<p class="empty-state">Select an asset to view its depreciation schedule.</p>';
+            return;
+        }
+
+        const schedule = Utils.computeDepreciationSchedule(selectedAsset);
+        const scheduleEntries = Object.entries(schedule).sort((a, b) => a[0].localeCompare(b[0]));
+
+        let html = `<div class="asset-detail-header">
+            <h4>${Utils.escapeHtml(selectedAsset.name)}</h4>
+            <div class="asset-detail-meta">
+                <span>Cost: ${fmtAmt(selectedAsset.purchase_cost)}</span>
+                <span>Salvage: ${fmtAmt(selectedAsset.salvage_value || 0)}</span>
+                <span>Life: ${selectedAsset.useful_life_months} mo</span>
+                <span>Purchased: ${Utils.formatDate(selectedAsset.purchase_date)}</span>
+            </div>
+        </div>`;
+
+        if (scheduleEntries.length === 0) {
+            html += '<p class="empty-state">This asset is non-depreciable.</p>';
+        } else {
+            html += '<div class="asset-depr-table-wrapper"><table class="asset-depr-table"><thead><tr>';
+            html += '<th>Month</th><th>Depreciation</th><th>Accumulated</th><th>Net Book Value</th>';
+            html += '</tr></thead><tbody>';
+
+            let accumDepr = 0;
+            scheduleEntries.forEach(([month, depr]) => {
+                accumDepr += depr;
+                const nbv = selectedAsset.purchase_cost - accumDepr;
+                html += `<tr>
+                    <td>${Utils.formatMonthShort(month)}</td>
+                    <td>${fmtAmt(depr)}</td>
+                    <td>${fmtAmt(accumDepr)}</td>
+                    <td>${fmtAmt(nbv)}</td>
+                </tr>`;
+            });
+
+            html += '</tbody></table></div>';
+        }
+
+        if (selectedAsset.notes) {
+            html += `<div class="asset-detail-notes">Notes: ${Utils.escapeHtml(selectedAsset.notes)}</div>`;
+        }
+
+        detailPanel.innerHTML = html;
+    },
+
+    /**
+     * Render the Loans tab with list/detail layout
+     * @param {Array} loans - Array of loan objects
+     * @param {number|null} selectedLoanId - Currently selected loan ID
+     */
+    renderLoansTab(loans, selectedLoanId) {
+        const fmtAmt = (amt) => Utils.formatCurrency(amt);
+
+        // Left panel: loan list
+        const listPanel = document.getElementById('loanListPanel');
+        if (loans.length === 0) {
+            listPanel.innerHTML = '<p class="empty-state">No loans yet. Click "+ Add Loan" to begin.</p>';
+        } else {
+            listPanel.innerHTML = loans.map(loan => {
+                const selected = loan.id === selectedLoanId ? ' selected' : '';
+                return `<div class="loan-list-item${selected}" data-id="${loan.id}">
+                    <div class="loan-list-name">${Utils.escapeHtml(loan.name)}</div>
+                    <div class="loan-list-meta">${fmtAmt(loan.principal)} &middot; ${loan.annual_rate}%</div>
+                    <div class="loan-list-actions">
+                        <button class="btn-icon edit-loan-btn" data-id="${loan.id}" title="Edit">&#9998;</button>
+                        <button class="btn-icon delete-loan-btn" data-id="${loan.id}" title="Delete">&times;</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // Right panel: selected loan detail
+        const detailPanel = document.getElementById('loanDetailPanel');
+        const selectedLoan = loans.find(l => l.id === selectedLoanId);
+        if (!selectedLoan) {
+            detailPanel.innerHTML = '<p class="empty-state">Select a loan to view its amortization schedule.</p>';
+            return;
+        }
+
+        const schedule = Utils.computeAmortizationSchedule({
+            principal: selectedLoan.principal,
+            annual_rate: selectedLoan.annual_rate,
+            term_months: selectedLoan.term_months,
+            payments_per_year: selectedLoan.payments_per_year,
+            start_date: selectedLoan.start_date
+        });
+
+        const totalInterest = schedule.reduce((sum, p) => sum + p.interest, 0);
+        const totalPaid = schedule.reduce((sum, p) => sum + p.payment, 0);
+        const termYears = (selectedLoan.term_months / 12).toFixed(1);
+
         let html = '<div class="loan-summary">';
-        html += `<div class="loan-summary-item"><div class="loan-summary-label">Principal</div><div class="loan-summary-value">${fmtAmt(config.principal)}</div></div>`;
-        html += `<div class="loan-summary-item"><div class="loan-summary-label">Rate</div><div class="loan-summary-value">${config.annual_rate}%</div></div>`;
-        html += `<div class="loan-summary-item"><div class="loan-summary-label">Term</div><div class="loan-summary-value">${config.term_years} yr</div></div>`;
+        html += `<div class="loan-summary-item"><div class="loan-summary-label">Principal</div><div class="loan-summary-value">${fmtAmt(selectedLoan.principal)}</div></div>`;
+        html += `<div class="loan-summary-item"><div class="loan-summary-label">Rate</div><div class="loan-summary-value">${selectedLoan.annual_rate}%</div></div>`;
+        html += `<div class="loan-summary-item"><div class="loan-summary-label">Term</div><div class="loan-summary-value">${termYears} yr</div></div>`;
         html += `<div class="loan-summary-item"><div class="loan-summary-label">Payment</div><div class="loan-summary-value">${fmtAmt(schedule[0]?.payment || 0)}</div></div>`;
         html += `<div class="loan-summary-item"><div class="loan-summary-label">Total Interest</div><div class="loan-summary-value amount-payable">${fmtAmt(totalInterest)}</div></div>`;
         html += `<div class="loan-summary-item"><div class="loan-summary-label">Total Paid</div><div class="loan-summary-value">${fmtAmt(totalPaid)}</div></div>`;
@@ -1168,7 +1327,12 @@ const UI = {
         });
 
         html += '</tbody></table></div>';
-        container.innerHTML = html;
+
+        if (selectedLoan.notes) {
+            html += `<div class="loan-detail-notes">Notes: ${Utils.escapeHtml(selectedLoan.notes)}</div>`;
+        }
+
+        detailPanel.innerHTML = html;
     },
 
     /**

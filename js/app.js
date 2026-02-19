@@ -7,6 +7,9 @@ const App = {
     deleteCategoryTargetId: null,
     deleteFolderTargetId: null,
     deleteAssetTargetId: null,
+    deleteLoanTargetId: null,
+    selectedAssetId: null,
+    selectedLoanId: null,
     folderCreatedFromCategory: false,
     pendingFileLoad: null,
     savedFileHandle: null,
@@ -83,10 +86,15 @@ const App = {
         if (bsTab && bsTab.style.display !== 'none') {
             this.refreshBalanceSheet();
         }
-        // Refresh Loan tab if visible
+        // Refresh Fixed Assets tab if visible
+        const assetsTab = document.getElementById('assetsTab');
+        if (assetsTab && assetsTab.style.display !== 'none') {
+            this.refreshFixedAssets();
+        }
+        // Refresh Loans tab if visible
         const loanTab = document.getElementById('loanTab');
         if (loanTab && loanTab.style.display !== 'none') {
-            this.refreshLoan();
+            this.refreshLoans();
         }
     },
 
@@ -275,7 +283,7 @@ const App = {
             btn.classList.toggle('active', btn.dataset.tab === tab);
         });
 
-        const tabs = ['journalTab', 'cashflowTab', 'pnlTab', 'balancesheetTab', 'loanTab'];
+        const tabs = ['journalTab', 'cashflowTab', 'pnlTab', 'balancesheetTab', 'assetsTab', 'loanTab'];
         tabs.forEach(id => {
             const el = document.getElementById(id);
             if (el) el.style.display = 'none';
@@ -290,9 +298,12 @@ const App = {
         } else if (tab === 'balancesheet') {
             document.getElementById('balancesheetTab').style.display = 'block';
             this.refreshBalanceSheet();
+        } else if (tab === 'assets') {
+            document.getElementById('assetsTab').style.display = 'block';
+            this.refreshFixedAssets();
         } else if (tab === 'loan') {
             document.getElementById('loanTab').style.display = 'block';
-            this.refreshLoan();
+            this.refreshLoans();
         } else {
             document.getElementById('journalTab').style.display = 'block';
         }
@@ -871,9 +882,6 @@ const App = {
         document.getElementById('bsMonthMonth').addEventListener('change', () => this.refreshBalanceSheet());
         document.getElementById('bsMonthYear').addEventListener('change', () => this.refreshBalanceSheet());
 
-        // Add fixed asset button
-        document.getElementById('addFixedAssetBtn').addEventListener('click', () => this.openFixedAssetModal());
-
         // Fixed asset form
         document.getElementById('fixedAssetForm').addEventListener('submit', (e) => {
             e.preventDefault();
@@ -889,14 +897,6 @@ const App = {
             this.deleteAssetTargetId = null;
         });
 
-        // Balance sheet content click delegation (edit/delete asset buttons)
-        document.getElementById('balanceSheetContent').addEventListener('click', (e) => {
-            const editBtn = e.target.closest('.edit-asset-btn');
-            const deleteBtn = e.target.closest('.delete-asset-btn');
-            if (editBtn) this.handleEditFixedAsset(parseInt(editBtn.dataset.id));
-            if (deleteBtn) this.handleDeleteFixedAsset(parseInt(deleteBtn.dataset.id));
-        });
-
         // Equity config
         document.getElementById('editEquityBtn').addEventListener('click', () => this.openEquityModal());
         document.getElementById('equityForm').addEventListener('submit', (e) => {
@@ -905,15 +905,82 @@ const App = {
         });
         document.getElementById('cancelEquityBtn').addEventListener('click', () => UI.hideModal('equityModal'));
 
-        // ==================== LOAN ====================
+        // Investor handlers (inside equity modal)
+        document.getElementById('addInvestorBtn').addEventListener('click', () => this.openInvestorModal());
+        document.getElementById('investorForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleSaveInvestor();
+        });
+        document.getElementById('cancelInvestorBtn').addEventListener('click', () => UI.hideModal('investorModal'));
 
-        document.getElementById('editLoanBtn').addEventListener('click', () => this.openLoanConfigModal());
+        // Investor list click delegation
+        document.getElementById('investorsList').addEventListener('click', (e) => {
+            const editBtn = e.target.closest('.edit-investor-btn');
+            const deleteBtn = e.target.closest('.delete-investor-btn');
+            const item = e.target.closest('.investor-item');
+            if (!item) return;
+            const invId = item.dataset.id;
+            if (editBtn) this.handleEditInvestor(invId);
+            if (deleteBtn) this.handleDeleteInvestor(invId);
+        });
+
+        // ==================== FIXED ASSETS TAB ====================
+
+        document.getElementById('addAssetTabBtn').addEventListener('click', () => this.openFixedAssetModal());
+
+        // Assets list panel click delegation
+        document.getElementById('assetsListPanel').addEventListener('click', (e) => {
+            const editBtn = e.target.closest('.edit-asset-btn');
+            const deleteBtn = e.target.closest('.delete-asset-btn');
+            const item = e.target.closest('.asset-list-item');
+            if (editBtn) {
+                this.handleEditFixedAsset(parseInt(editBtn.dataset.id));
+                return;
+            }
+            if (deleteBtn) {
+                this.handleDeleteFixedAsset(parseInt(deleteBtn.dataset.id));
+                return;
+            }
+            if (item) {
+                this.selectedAssetId = parseInt(item.dataset.id);
+                this.refreshFixedAssets();
+            }
+        });
+
+        // ==================== LOANS TAB ====================
+
+        document.getElementById('addLoanBtn').addEventListener('click', () => this.openLoanConfigModal());
         document.getElementById('loanConfigForm').addEventListener('submit', (e) => {
             e.preventDefault();
             this.handleSaveLoanConfig();
         });
         document.getElementById('cancelLoanConfigBtn').addEventListener('click', () => UI.hideModal('loanConfigModal'));
-        document.getElementById('clearLoanBtn').addEventListener('click', () => this.handleClearLoan());
+
+        // Delete loan modal
+        document.getElementById('confirmDeleteLoanBtn').addEventListener('click', () => this.confirmDeleteLoan());
+        document.getElementById('cancelDeleteLoanBtn').addEventListener('click', () => {
+            UI.hideModal('deleteLoanModal');
+            this.deleteLoanTargetId = null;
+        });
+
+        // Loan list panel click delegation
+        document.getElementById('loanListPanel').addEventListener('click', (e) => {
+            const editBtn = e.target.closest('.edit-loan-btn');
+            const deleteBtn = e.target.closest('.delete-loan-btn');
+            const item = e.target.closest('.loan-list-item');
+            if (editBtn) {
+                this.openLoanConfigModal(parseInt(editBtn.dataset.id));
+                return;
+            }
+            if (deleteBtn) {
+                this.handleDeleteLoan(parseInt(deleteBtn.dataset.id));
+                return;
+            }
+            if (item) {
+                this.selectedLoanId = parseInt(item.dataset.id);
+                this.refreshLoans();
+            }
+        });
 
         // ==================== MODALS & KEYBOARD ====================
 
@@ -1715,63 +1782,80 @@ const App = {
         const ap = Database.getAccountsPayableAsOf(asOfMonth);
         const salesTaxPayable = Database.getSalesTaxPayableAsOf(asOfMonth);
 
-        // Fixed assets and depreciation
+        // Fixed assets and depreciation (using Utils.computeDepreciationSchedule)
         const fixedAssets = Database.getFixedAssets();
-        const asOfDate = `${year}-${month}-28`; // End of month approximation
 
+        const round2 = (v) => Math.round(v * 100) / 100;
         let totalFixedAssetCost = 0;
         let totalAccumDepr = 0;
         const assetDetails = fixedAssets.map(asset => {
-            const purchaseDate = new Date(asset.purchase_date + 'T00:00:00');
-            const asOf = new Date(asOfDate + 'T00:00:00');
-            let monthsElapsed = (asOf.getFullYear() - purchaseDate.getFullYear()) * 12 + (asOf.getMonth() - purchaseDate.getMonth());
-            if (monthsElapsed < 0) monthsElapsed = 0;
-            if (monthsElapsed > asset.useful_life_months) monthsElapsed = asset.useful_life_months;
+            const deprSchedule = Utils.computeDepreciationSchedule(asset);
+            let accumDepr = 0;
+            Object.entries(deprSchedule).forEach(([m, amt]) => {
+                if (m <= asOfMonth) accumDepr = round2(accumDepr + amt);
+            });
 
-            const monthlyDepr = asset.purchase_cost / asset.useful_life_months;
-            const accumDepr = monthlyDepr * monthsElapsed;
-
-            totalFixedAssetCost += asset.purchase_cost;
-            totalAccumDepr += accumDepr;
+            totalFixedAssetCost = round2(totalFixedAssetCost + asset.purchase_cost);
+            totalAccumDepr = round2(totalAccumDepr + accumDepr);
 
             return {
                 ...asset,
                 accum_depreciation: accumDepr,
-                net_book_value: asset.purchase_cost - accumDepr
+                net_book_value: round2(asset.purchase_cost - accumDepr)
             };
         });
 
-        const netFixedAssets = totalFixedAssetCost - totalAccumDepr;
-        const totalAssets = cash + ar + netFixedAssets;
+        const netFixedAssets = round2(totalFixedAssetCost - totalAccumDepr);
+        const totalAssets = round2(cash + ar + netFixedAssets);
 
-        // Loan balance
-        const loanConfig = Database.getLoanConfig();
-        let loanBalance = 0;
-        if (loanConfig) {
-            const schedule = this.computeAmortizationSchedule(loanConfig);
-            // Find balance as of asOfMonth
-            const asOfMonthStr = asOfMonth;
+        // Multi-loan balances
+        const loans = Database.getLoans();
+        let totalLoanBalance = 0;
+        const loanDetails = loans.map(loan => {
+            const schedule = Utils.computeAmortizationSchedule({
+                principal: loan.principal,
+                annual_rate: loan.annual_rate,
+                term_months: loan.term_months,
+                payments_per_year: loan.payments_per_year,
+                start_date: loan.start_date
+            });
+
+            let balance = loan.principal;
             for (let i = schedule.length - 1; i >= 0; i--) {
-                if (schedule[i].month <= asOfMonthStr) {
-                    loanBalance = schedule[i].ending_balance;
+                if (schedule[i].month <= asOfMonth) {
+                    balance = schedule[i].ending_balance;
                     break;
                 }
             }
-            if (schedule.length > 0 && schedule[0].month > asOfMonthStr) {
-                loanBalance = loanConfig.principal;
+            if (schedule.length > 0 && schedule[0].month > asOfMonth) {
+                balance = loan.principal;
             }
+
+            totalLoanBalance = round2(totalLoanBalance + balance);
+            return { name: loan.name, balance };
+        });
+
+        const totalLiabilities = round2(ap + salesTaxPayable + totalLoanBalance);
+
+        // Equity (with investors)
+        const equityConfig = Database.getEquityConfig();
+        const investors = equityConfig.investors || [];
+        let commonStock, apicVal;
+
+        if (investors.length > 0) {
+            // Derive from investor data
+            commonStock = round2(investors.reduce((sum, inv) => sum + (inv.shares * equityConfig.common_stock_par), 0));
+            const totalInvested = round2(investors.reduce((sum, inv) => sum + (inv.shares * inv.price_per_share), 0));
+            apicVal = round2(totalInvested - commonStock);
+        } else {
+            commonStock = round2(equityConfig.common_stock_par * equityConfig.common_stock_shares);
+            apicVal = round2(equityConfig.apic || 0);
         }
 
-        const totalLiabilities = ap + salesTaxPayable + loanBalance;
+        const retainedEarnings = round2(Database.getRetainedEarningsAsOf(asOfMonth, taxMode));
+        const totalEquity = round2(commonStock + apicVal + retainedEarnings);
 
-        // Equity
-        const equityConfig = Database.getEquityConfig();
-        const commonStock = equityConfig.common_stock_par * equityConfig.common_stock_shares;
-        const apic = equityConfig.apic || 0;
-        const retainedEarnings = Database.getRetainedEarningsAsOf(asOfMonth, taxMode);
-        const totalEquity = commonStock + apic + retainedEarnings;
-
-        const totalLiabilitiesAndEquity = totalLiabilities + totalEquity;
+        const totalLiabilitiesAndEquity = round2(totalLiabilities + totalEquity);
         const isBalanced = Math.abs(totalAssets - totalLiabilitiesAndEquity) < 0.01;
 
         const bsData = {
@@ -1779,9 +1863,11 @@ const App = {
             cash, ar,
             assetDetails, totalFixedAssetCost, totalAccumDepr, netFixedAssets,
             totalAssets,
-            ap, salesTaxPayable, loanBalance,
+            ap, salesTaxPayable,
+            loanDetails, totalLoanBalance,
             totalLiabilities,
-            commonStock, apic, retainedEarnings, totalEquity,
+            commonStock, apic: apicVal, retainedEarnings, totalEquity,
+            investorDetails: investors,
             totalLiabilitiesAndEquity, isBalanced
         };
 
@@ -1809,71 +1895,22 @@ const App = {
         yearSelect.value = year;
     },
 
-    // ==================== LOAN AMORTIZATION ====================
+    // ==================== FIXED ASSETS & LOANS ====================
 
     /**
-     * Compute a full amortization schedule from loan config
-     * @param {Object} config - { principal, annual_rate, term_years, payments_per_year, start_date }
-     * @returns {Array} Array of payment objects
+     * Refresh the Fixed Assets tab
      */
-    computeAmortizationSchedule(config) {
-        const { principal, annual_rate, term_years, payments_per_year, start_date } = config;
-        const totalPayments = term_years * payments_per_year;
-        const periodicRate = (annual_rate / 100) / payments_per_year;
-
-        let payment;
-        if (periodicRate === 0) {
-            payment = principal / totalPayments;
-        } else {
-            payment = principal * (periodicRate * Math.pow(1 + periodicRate, totalPayments)) /
-                      (Math.pow(1 + periodicRate, totalPayments) - 1);
-        }
-
-        const schedule = [];
-        let balance = principal;
-        const startDate = new Date(start_date + 'T00:00:00');
-        const monthsBetween = 12 / payments_per_year;
-
-        for (let i = 1; i <= totalPayments; i++) {
-            const interest = balance * periodicRate;
-            const principalPart = payment - interest;
-            balance -= principalPart;
-            if (balance < 0.01) balance = 0;
-
-            // Calculate payment date
-            const paymentDate = new Date(startDate);
-            paymentDate.setMonth(paymentDate.getMonth() + Math.round(monthsBetween * i));
-            const month = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
-
-            schedule.push({
-                number: i,
-                month,
-                payment: payment,
-                principal: principalPart,
-                interest: interest,
-                ending_balance: balance
-            });
-        }
-
-        return schedule;
+    refreshFixedAssets() {
+        const assets = Database.getFixedAssets();
+        UI.renderFixedAssetsTab(assets, this.selectedAssetId);
     },
 
     /**
-     * Refresh the Loan Amortization tab
+     * Refresh the Loans tab (multi-loan)
      */
-    refreshLoan() {
-        const config = Database.getLoanConfig();
-        if (!config) {
-            document.getElementById('loanContent').innerHTML =
-                '<p class="empty-state">No loan configured. Click "Configure Loan" to set up amortization.</p>';
-            return;
-        }
-
-        const schedule = this.computeAmortizationSchedule(config);
-        const totalInterest = schedule.reduce((sum, p) => sum + p.interest, 0);
-        const totalPaid = schedule.reduce((sum, p) => sum + p.payment, 0);
-
-        UI.renderLoanAmortization(config, schedule, totalInterest, totalPaid);
+    refreshLoans() {
+        const loans = Database.getLoans();
+        UI.renderLoansTab(loans, this.selectedLoanId);
     },
 
     // ==================== FIXED ASSET HANDLERS ====================
@@ -1884,6 +1921,8 @@ const App = {
         document.getElementById('fixedAssetModalTitle').textContent = 'Add Fixed Asset';
         document.getElementById('saveAssetBtn').textContent = 'Add Asset';
         document.getElementById('assetDate').value = Utils.getTodayDate();
+        document.getElementById('assetDeprMethod').value = 'straight_line';
+        document.getElementById('assetAutoTransaction').checked = true;
         UI.showModal('fixedAssetModal');
         document.getElementById('assetName').focus();
     },
@@ -1891,29 +1930,85 @@ const App = {
     handleSaveFixedAsset() {
         const name = document.getElementById('assetName').value.trim();
         const cost = parseFloat(document.getElementById('assetCost').value);
-        const life = parseInt(document.getElementById('assetLife').value);
+        const salvage = parseFloat(document.getElementById('assetSalvage').value) || 0;
+        const life = parseInt(document.getElementById('assetLife').value) || 0;
         const date = document.getElementById('assetDate').value;
+        const deprMethod = document.getElementById('assetDeprMethod').value;
+        const deprStart = document.getElementById('assetDeprStart').value || null;
+        const isDepreciable = deprMethod !== 'none';
+        const notes = document.getElementById('assetNotes').value.trim() || null;
+        const autoTransaction = document.getElementById('assetAutoTransaction').checked;
         const editingId = document.getElementById('editingAssetId').value;
 
-        if (!name || isNaN(cost) || isNaN(life) || !date) {
-            UI.showNotification('Please fill in all fields', 'error');
+        if (!name || isNaN(cost) || !date) {
+            UI.showNotification('Please fill in name, cost, and date', 'error');
+            return;
+        }
+
+        if (isDepreciable && life <= 0) {
+            UI.showNotification('Depreciable assets need a useful life > 0', 'error');
+            return;
+        }
+
+        if (isDepreciable && salvage >= cost) {
+            UI.showNotification('Salvage value must be less than cost for depreciable assets', 'error');
             return;
         }
 
         try {
             if (editingId) {
-                Database.updateFixedAsset(parseInt(editingId), name, cost, life, date);
+                Database.updateFixedAsset(parseInt(editingId), name, cost, life, date, salvage, deprMethod, deprStart, isDepreciable, notes);
                 UI.showNotification('Asset updated', 'success');
             } else {
-                Database.addFixedAsset(name, cost, life, date);
+                const assetId = Database.addFixedAsset(name, cost, life, date, salvage, deprMethod, deprStart, isDepreciable, notes);
+                if (autoTransaction) {
+                    this._autoCreateAssetTransaction(assetId, name, cost, date);
+                }
                 UI.showNotification('Asset added', 'success');
             }
             UI.hideModal('fixedAssetModal');
+            this.refreshFixedAssets();
             this.refreshBalanceSheet();
         } catch (error) {
             console.error('Error saving asset:', error);
             UI.showNotification('Failed to save asset', 'error');
         }
+    },
+
+    /**
+     * Auto-create a payable transaction for a fixed asset purchase
+     */
+    _autoCreateAssetTransaction(assetId, name, cost, date) {
+        // Find or create an "Asset Purchases" category (hidden from P&L — capital expenditure, not OpEx)
+        let categories = Database.getCategories();
+        let cat = categories.find(c => c.name === 'Asset Purchases');
+        let catId;
+        if (!cat) {
+            // show_on_pl=true means hidden from P&L (inverted semantics)
+            catId = Database.addCategory('Asset Purchases', false, null, 'payable', null, true, false, false, false);
+        } else {
+            catId = cat.id;
+        }
+
+        const month = date.substring(0, 7);
+        Database.addTransaction({
+            entry_date: date,
+            category_id: catId,
+            item_description: `Purchase: ${name}`,
+            amount: cost,
+            transaction_type: 'payable',
+            status: 'paid',
+            month_due: month,
+            month_paid: month,
+            date_processed: date,
+            source_type: 'asset_purchase',
+            source_id: assetId
+        });
+
+        // Get the last inserted transaction ID and link it back
+        const result = Database.db.exec('SELECT last_insert_rowid() as id');
+        const txId = result[0].values[0][0];
+        Database.linkTransactionToAsset(assetId, txId);
     },
 
     handleEditFixedAsset(id) {
@@ -1923,8 +2018,13 @@ const App = {
         document.getElementById('editingAssetId').value = asset.id;
         document.getElementById('assetName').value = asset.name;
         document.getElementById('assetCost').value = asset.purchase_cost;
+        document.getElementById('assetSalvage').value = asset.salvage_value || 0;
         document.getElementById('assetLife').value = asset.useful_life_months;
         document.getElementById('assetDate').value = asset.purchase_date;
+        document.getElementById('assetDeprMethod').value = asset.depreciation_method || 'straight_line';
+        document.getElementById('assetDeprStart').value = asset.dep_start_date || '';
+        document.getElementById('assetNotes').value = asset.notes || '';
+        document.getElementById('assetAutoTransaction').checked = false; // Don't re-create on edit
         document.getElementById('fixedAssetModalTitle').textContent = 'Edit Fixed Asset';
         document.getElementById('saveAssetBtn').textContent = 'Save Changes';
         UI.showModal('fixedAssetModal');
@@ -1938,7 +2038,9 @@ const App = {
     confirmDeleteFixedAsset() {
         if (this.deleteAssetTargetId) {
             Database.deleteFixedAsset(this.deleteAssetTargetId);
+            this.selectedAssetId = null;
             UI.showNotification('Asset deleted', 'success');
+            this.refreshFixedAssets();
             this.refreshBalanceSheet();
         }
         UI.hideModal('deleteAssetModal');
@@ -1952,7 +2054,33 @@ const App = {
         document.getElementById('equityPar').value = config.common_stock_par || '';
         document.getElementById('equityShares').value = config.common_stock_shares || '';
         document.getElementById('equityApic').value = config.apic || '';
+        // Render investors list inside modal
+        this._renderInvestorsInModal();
         UI.showModal('equityModal');
+    },
+
+    _renderInvestorsInModal() {
+        const investors = Database.getInvestors();
+        const container = document.getElementById('investorsList');
+        if (!container) return;
+
+        if (investors.length === 0) {
+            container.innerHTML = '<p class="empty-state" style="padding: 8px 0;">No investors added yet.</p>';
+            return;
+        }
+
+        container.innerHTML = investors.map(inv => `
+            <div class="investor-item" data-id="${Utils.escapeHtml(inv.id)}">
+                <div class="investor-info">
+                    <strong>${Utils.escapeHtml(inv.name)}</strong>
+                    <span>${inv.shares.toLocaleString()} shares @ ${Utils.formatCurrency(inv.price_per_share)}</span>
+                </div>
+                <div class="investor-actions">
+                    <button type="button" class="btn-icon edit-investor-btn" title="Edit">&#9998;</button>
+                    <button type="button" class="btn-icon delete-investor-btn" title="Delete">&times;</button>
+                </div>
+            </div>
+        `).join('');
     },
 
     handleSaveEquity() {
@@ -1960,54 +2088,184 @@ const App = {
         const shares = parseInt(document.getElementById('equityShares').value) || 0;
         const apic = parseFloat(document.getElementById('equityApic').value) || 0;
 
-        Database.setEquityConfig({ common_stock_par: par, common_stock_shares: shares, apic: apic });
+        const config = Database.getEquityConfig();
+        config.common_stock_par = par;
+        config.common_stock_shares = shares;
+        config.apic = apic;
+        Database.setEquityConfig(config);
         UI.hideModal('equityModal');
         UI.showNotification('Equity config saved', 'success');
         this.refreshBalanceSheet();
     },
 
-    // ==================== LOAN CONFIG HANDLERS ====================
+    // ==================== INVESTOR HANDLERS ====================
 
-    openLoanConfigModal() {
-        const config = Database.getLoanConfig();
-        if (config) {
-            document.getElementById('loanPrincipal').value = config.principal || '';
-            document.getElementById('loanRate').value = config.annual_rate || '';
-            document.getElementById('loanTerm').value = config.term_years || '';
-            document.getElementById('loanPayments').value = config.payments_per_year || '';
-            document.getElementById('loanStartDate').value = config.start_date || '';
-        } else {
-            document.getElementById('loanConfigForm').reset();
-        }
-        UI.showModal('loanConfigModal');
+    openInvestorModal() {
+        document.getElementById('investorForm').reset();
+        document.getElementById('editingInvestorId').value = '';
+        document.getElementById('investorModalTitle').textContent = 'Add Investor';
+        document.getElementById('saveInvestorBtn').textContent = 'Add Investor';
+        document.getElementById('investorDate').value = Utils.getTodayDate();
+        document.getElementById('investorAutoTransaction').checked = true;
+        UI.showModal('investorModal');
+        document.getElementById('investorName').focus();
     },
 
-    handleSaveLoanConfig() {
-        const principal = parseFloat(document.getElementById('loanPrincipal').value);
-        const rate = parseFloat(document.getElementById('loanRate').value);
-        const term = parseInt(document.getElementById('loanTerm').value);
-        const payments = parseInt(document.getElementById('loanPayments').value);
-        const startDate = document.getElementById('loanStartDate').value;
+    handleSaveInvestor() {
+        const name = document.getElementById('investorName').value.trim();
+        const shares = parseInt(document.getElementById('investorShares').value);
+        const price = parseFloat(document.getElementById('investorPrice').value);
+        const date = document.getElementById('investorDate').value;
+        const autoTx = document.getElementById('investorAutoTransaction').checked;
+        const editingId = document.getElementById('editingInvestorId').value;
 
-        if (isNaN(principal) || isNaN(rate) || isNaN(term) || isNaN(payments) || !startDate) {
+        if (!name || isNaN(shares) || isNaN(price) || !date) {
             UI.showNotification('Please fill in all fields', 'error');
             return;
         }
 
-        Database.setLoanConfig({
-            principal, annual_rate: rate, term_years: term,
-            payments_per_year: payments, start_date: startDate
-        });
-        UI.hideModal('loanConfigModal');
-        UI.showNotification('Loan configured', 'success');
-        this.refreshLoan();
+        if (editingId) {
+            Database.updateInvestor(editingId, { name, shares, price_per_share: price, investment_date: date });
+            UI.showNotification('Investor updated', 'success');
+        } else {
+            const investor = { name, shares, price_per_share: price, investment_date: date };
+            Database.addInvestor(investor);
+            if (autoTx) {
+                this._autoCreateInvestmentTransaction(name, shares * price, date);
+            }
+            UI.showNotification('Investor added', 'success');
+        }
+
+        UI.hideModal('investorModal');
+        this._renderInvestorsInModal();
     },
 
-    handleClearLoan() {
-        Database.setLoanConfig(null);
+    _autoCreateInvestmentTransaction(name, amount, date) {
+        // Find or create an "Equity Investment" category (hidden from P&L — equity contribution, not revenue)
+        let categories = Database.getCategories();
+        let cat = categories.find(c => c.name === 'Equity Investment');
+        let catId;
+        if (!cat) {
+            // show_on_pl=true means hidden from P&L (inverted semantics)
+            catId = Database.addCategory('Equity Investment', false, null, 'receivable', null, true, false, false, false);
+        } else {
+            catId = cat.id;
+        }
+
+        const month = date.substring(0, 7);
+        Database.addTransaction({
+            entry_date: date,
+            category_id: catId,
+            item_description: `Investment: ${name}`,
+            amount: amount,
+            transaction_type: 'receivable',
+            status: 'received',
+            month_due: month,
+            month_paid: month,
+            date_processed: date,
+            source_type: 'investment',
+            source_id: null
+        });
+    },
+
+    handleEditInvestor(id) {
+        const investors = Database.getInvestors();
+        const inv = investors.find(i => i.id === id);
+        if (!inv) return;
+
+        document.getElementById('editingInvestorId').value = inv.id;
+        document.getElementById('investorName').value = inv.name;
+        document.getElementById('investorShares').value = inv.shares;
+        document.getElementById('investorPrice').value = inv.price_per_share;
+        document.getElementById('investorDate').value = inv.investment_date;
+        document.getElementById('investorAutoTransaction').checked = false;
+        document.getElementById('investorModalTitle').textContent = 'Edit Investor';
+        document.getElementById('saveInvestorBtn').textContent = 'Save Changes';
+        UI.showModal('investorModal');
+    },
+
+    handleDeleteInvestor(id) {
+        Database.deleteInvestor(id);
+        UI.showNotification('Investor removed', 'success');
+        this._renderInvestorsInModal();
+    },
+
+    // ==================== LOAN HANDLERS ====================
+
+    openLoanConfigModal(editId) {
+        document.getElementById('loanConfigForm').reset();
+        document.getElementById('editingLoanId').value = '';
+
+        if (editId) {
+            const loan = Database.getLoanById(editId);
+            if (loan) {
+                document.getElementById('editingLoanId').value = loan.id;
+                document.getElementById('loanName').value = loan.name;
+                document.getElementById('loanPrincipal').value = loan.principal;
+                document.getElementById('loanRate').value = loan.annual_rate;
+                document.getElementById('loanTermMonths').value = loan.term_months;
+                document.getElementById('loanPayments').value = loan.payments_per_year;
+                document.getElementById('loanStartDate').value = loan.start_date;
+                document.getElementById('loanNotes').value = loan.notes || '';
+                document.getElementById('loanConfigModalTitle').textContent = 'Edit Loan';
+            }
+        } else {
+            document.getElementById('loanConfigModalTitle').textContent = 'Add Loan';
+            document.getElementById('loanStartDate').value = Utils.getTodayDate();
+        }
+        UI.showModal('loanConfigModal');
+        document.getElementById('loanName').focus();
+    },
+
+    handleSaveLoanConfig() {
+        const name = document.getElementById('loanName').value.trim();
+        const principal = parseFloat(document.getElementById('loanPrincipal').value);
+        const rate = parseFloat(document.getElementById('loanRate').value);
+        const termMonths = parseInt(document.getElementById('loanTermMonths').value);
+        const payments = parseInt(document.getElementById('loanPayments').value);
+        const startDate = document.getElementById('loanStartDate').value;
+        const notes = document.getElementById('loanNotes').value.trim();
+        const editingId = document.getElementById('editingLoanId').value;
+
+        if (!name || isNaN(principal) || isNaN(rate) || isNaN(termMonths) || isNaN(payments) || !startDate) {
+            UI.showNotification('Please fill in all required fields', 'error');
+            return;
+        }
+
+        const params = { name, principal, annual_rate: rate, term_months: termMonths, payments_per_year: payments, start_date: startDate, notes };
+
+        if (editingId) {
+            Database.updateLoan(parseInt(editingId), params);
+            UI.showNotification('Loan updated', 'success');
+        } else {
+            const loanId = Database.addLoan(params);
+            this.selectedLoanId = loanId;
+            UI.showNotification('Loan added', 'success');
+        }
+
         UI.hideModal('loanConfigModal');
-        UI.showNotification('Loan cleared', 'success');
-        this.refreshLoan();
+        this.refreshLoans();
+    },
+
+    handleDeleteLoan(id) {
+        this.deleteLoanTargetId = id;
+        const loan = Database.getLoanById(id);
+        document.getElementById('deleteLoanMessage').textContent =
+            `Are you sure you want to delete "${loan ? loan.name : 'this loan'}"?`;
+        UI.showModal('deleteLoanModal');
+    },
+
+    confirmDeleteLoan() {
+        if (this.deleteLoanTargetId) {
+            Database.deleteLoan(this.deleteLoanTargetId);
+            if (this.selectedLoanId === this.deleteLoanTargetId) {
+                this.selectedLoanId = null;
+            }
+            UI.showNotification('Loan deleted', 'success');
+            this.refreshLoans();
+        }
+        UI.hideModal('deleteLoanModal');
+        this.deleteLoanTargetId = null;
     },
 
     // ==================== EXPORT ====================

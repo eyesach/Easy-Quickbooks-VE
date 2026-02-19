@@ -1973,3 +1973,311 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--color-text-muted);
 }
+
+/* ==================== FIXED ASSETS TAB ==================== */
+
+.assets-section {
+    background: var(--color-white);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+}
+
+.assets-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.assets-header h3 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.assets-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.assets-summary-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.assets-summary-card {
+    padding: 12px;
+    background-color: var(--color-bg);
+    border-radius: var(--radius-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.assets-summary-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.assets-summary-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    font-family: 'DM Mono', monospace;
+}
+
+.assets-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    min-height: 300px;
+}
+
+.assets-list-panel {
+    border-right: 1px solid var(--color-border);
+    overflow-y: auto;
+    max-height: 600px;
+    padding: 8px 0;
+}
+
+.assets-detail-panel {
+    padding: 20px;
+    overflow-y: auto;
+    max-height: 600px;
+}
+
+.asset-list-item {
+    padding: 10px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    transition: background-color 0.15s;
+}
+
+.asset-list-item:hover {
+    background-color: rgba(var(--color-primary-rgb), 0.04);
+}
+
+.asset-list-item.selected {
+    background-color: rgba(var(--color-primary-rgb), 0.08);
+    border-left: 3px solid var(--color-primary);
+}
+
+.asset-list-name {
+    font-weight: 500;
+    font-size: 0.85rem;
+    flex: 1 1 100%;
+}
+
+.asset-list-meta {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    font-family: 'DM Mono', monospace;
+    flex: 1;
+}
+
+.asset-list-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.asset-detail-header h4 {
+    margin: 0 0 8px 0;
+    font-size: 1rem;
+}
+
+.asset-detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    margin-bottom: 16px;
+    font-family: 'DM Mono', monospace;
+}
+
+.asset-depr-table-wrapper {
+    max-height: 450px;
+    overflow-y: auto;
+}
+
+.asset-depr-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+.asset-depr-table th,
+.asset-depr-table td {
+    padding: 6px 12px;
+    text-align: right;
+    border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.asset-depr-table th {
+    background-color: var(--color-bg);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.5px;
+    color: var(--color-text-muted);
+    position: sticky;
+    top: 0;
+}
+
+.asset-depr-table th:first-child,
+.asset-depr-table td:first-child {
+    text-align: left;
+}
+
+.asset-depr-table tbody tr:hover {
+    background-color: rgba(var(--color-primary-rgb), 0.04);
+}
+
+.asset-detail-notes {
+    margin-top: 12px;
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
+/* ==================== MULTI-LOAN LAYOUT ==================== */
+
+.loan-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    min-height: 300px;
+}
+
+.loan-list-panel {
+    border-right: 1px solid var(--color-border);
+    overflow-y: auto;
+    max-height: 600px;
+    padding: 8px 0;
+}
+
+.loan-detail-panel {
+    padding: 20px;
+    overflow-y: auto;
+    max-height: 600px;
+}
+
+.loan-list-item {
+    padding: 10px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    transition: background-color 0.15s;
+}
+
+.loan-list-item:hover {
+    background-color: rgba(var(--color-primary-rgb), 0.04);
+}
+
+.loan-list-item.selected {
+    background-color: rgba(var(--color-primary-rgb), 0.08);
+    border-left: 3px solid var(--color-primary);
+}
+
+.loan-list-name {
+    font-weight: 500;
+    font-size: 0.85rem;
+    flex: 1 1 100%;
+}
+
+.loan-list-meta {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    font-family: 'DM Mono', monospace;
+    flex: 1;
+}
+
+.loan-list-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.loan-detail-notes {
+    margin-top: 12px;
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
+/* ==================== P&L COMPUTED ROWS ==================== */
+
+.pnl-computed-row td {
+    font-style: italic;
+    color: var(--color-text-muted);
+}
+
+.pnl-computed-row td:first-child {
+    padding-left: 24px;
+}
+
+/* ==================== EQUITY INVESTORS ==================== */
+
+.equity-investors-section {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border);
+}
+
+.equity-investors-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.equity-investors-header h4 {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.investors-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.investor-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--color-bg);
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+}
+
+.investor-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.investor-info span {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    font-family: 'DM Mono', monospace;
+}
+
+.investor-actions {
+    display: flex;
+    gap: 4px;
+}

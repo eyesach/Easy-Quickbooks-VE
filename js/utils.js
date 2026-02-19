@@ -395,6 +395,143 @@ const Utils = {
         return this.hslToHex(hsl.h, hsl.s, hsl.l);
     },
 
+    // ==================== AMORTIZATION & DEPRECIATION ====================
+
+    /**
+     * Compute a full amortization schedule from loan config.
+     * Accepts { principal, annual_rate, term_months, payments_per_year, start_date }.
+     * Backward compat: if term_years is provided instead of term_months, auto-convert.
+     * @param {Object} config - Loan configuration
+     * @returns {Array} Array of payment objects
+     */
+    computeAmortizationSchedule(config) {
+        const { principal, annual_rate, payments_per_year, start_date } = config;
+        const termMonths = config.term_months || (config.term_years ? config.term_years * 12 : 0);
+        const termYears = termMonths / 12;
+        const totalPayments = termYears * payments_per_year;
+        const periodicRate = (annual_rate / 100) / payments_per_year;
+
+        const round2 = (v) => Math.round(v * 100) / 100;
+
+        let payment;
+        if (periodicRate === 0) {
+            payment = round2(principal / totalPayments);
+        } else {
+            payment = round2(principal * (periodicRate * Math.pow(1 + periodicRate, totalPayments)) /
+                      (Math.pow(1 + periodicRate, totalPayments) - 1));
+        }
+
+        const schedule = [];
+        let balance = round2(principal);
+        const startDate = new Date(start_date + 'T00:00:00');
+        const monthsBetween = 12 / payments_per_year;
+
+        for (let i = 1; i <= totalPayments; i++) {
+            const interest = round2(balance * periodicRate);
+            let principalPart = round2(payment - interest);
+
+            // Last payment: adjust to zero out balance exactly
+            if (i === totalPayments) {
+                principalPart = balance;
+                // Recalculate final payment as principal + interest
+            }
+
+            balance = round2(balance - principalPart);
+            if (balance < 0.01) balance = 0;
+
+            const paymentDate = new Date(startDate);
+            paymentDate.setMonth(paymentDate.getMonth() + Math.round(monthsBetween * i));
+            const month = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
+
+            const actualPayment = (i === totalPayments) ? round2(principalPart + interest) : payment;
+
+            schedule.push({
+                number: i,
+                month,
+                payment: actualPayment,
+                principal: principalPart,
+                interest: interest,
+                ending_balance: balance
+            });
+        }
+
+        return schedule;
+    },
+
+    /**
+     * Compute a depreciation schedule for a fixed asset.
+     * Returns { [YYYY-MM]: monthlyDeprAmount } for each month in the asset's life.
+     * @param {Object} asset - { purchase_cost, salvage_value, useful_life_months, purchase_date, dep_start_date, depreciation_method, is_depreciable }
+     * @returns {Object} Map of month string to depreciation amount
+     */
+    computeDepreciationSchedule(asset) {
+        if (!asset.is_depreciable || asset.depreciation_method === 'none') {
+            return {};
+        }
+
+        const cost = parseFloat(asset.purchase_cost) || 0;
+        const salvage = parseFloat(asset.salvage_value) || 0;
+        const lifeMonths = parseInt(asset.useful_life_months) || 0;
+        if (lifeMonths <= 0 || cost <= salvage) return {};
+
+        const startStr = asset.dep_start_date || asset.purchase_date;
+        if (!startStr) return {};
+
+        const startDate = new Date(startStr + 'T00:00:00');
+        // Depreciation begins the month after the start date
+        startDate.setMonth(startDate.getMonth() + 1);
+
+        const schedule = {};
+
+        const round2 = (v) => Math.round(v * 100) / 100;
+
+        if (asset.depreciation_method === 'double_declining') {
+            const annualRate = 2 / (lifeMonths / 12);
+            const monthlyRate = annualRate / 12;
+            let bookValue = cost;
+
+            for (let i = 0; i < lifeMonths; i++) {
+                const d = new Date(startDate);
+                d.setMonth(d.getMonth() + i);
+                const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+                let depr = round2(bookValue * monthlyRate);
+                // Don't depreciate below salvage
+                if (bookValue - depr < salvage) {
+                    depr = round2(bookValue - salvage);
+                }
+                if (depr < 0.01) break;
+
+                schedule[month] = (schedule[month] || 0) + depr;
+                bookValue -= depr;
+            }
+        } else {
+            // straight_line (default)
+            const monthlyDepr = round2((cost - salvage) / lifeMonths);
+
+            for (let i = 0; i < lifeMonths; i++) {
+                const d = new Date(startDate);
+                d.setMonth(d.getMonth() + i);
+                const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                schedule[month] = (schedule[month] || 0) + monthlyDepr;
+            }
+        }
+
+        return schedule;
+    },
+
+    /**
+     * Get a specific month's interest from a pre-computed amortization schedule.
+     * @param {Array} schedule - Amortization schedule from computeAmortizationSchedule
+     * @param {string} targetMonth - Month in YYYY-MM format
+     * @returns {number} Interest for that month (summed if multiple payments in same month)
+     */
+    getMonthInterestFromSchedule(schedule, targetMonth) {
+        return schedule
+            .filter(p => p.month === targetMonth)
+            .reduce((sum, p) => sum + p.interest, 0);
+    },
+
     /**
      * Convert hex color to RGB string for use in rgba()
      * @param {string} hex - Hex color
