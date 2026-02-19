@@ -327,6 +327,85 @@ const Utils = {
     sanitizeFilename(str) {
         if (!str) return '';
         return str.replace(/[^a-zA-Z0-9_\- ]/g, '').replace(/\s+/g, '_');
+    },
+
+    // ==================== COLOR HELPERS ====================
+
+    /**
+     * Convert hex color to HSL
+     * @param {string} hex - Hex color (e.g., '#4a90a4')
+     * @returns {{h: number, s: number, l: number}} HSL values (h: 0-360, s: 0-100, l: 0-100)
+     */
+    hexToHSL(hex) {
+        hex = hex.replace('#', '');
+        const r = parseInt(hex.substring(0, 2), 16) / 255;
+        const g = parseInt(hex.substring(2, 4), 16) / 255;
+        const b = parseInt(hex.substring(4, 6), 16) / 255;
+
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        let h, s;
+        const l = (max + min) / 2;
+
+        if (max === min) {
+            h = s = 0;
+        } else {
+            const d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            switch (max) {
+                case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+                case g: h = ((b - r) / d + 2) / 6; break;
+                case b: h = ((r - g) / d + 4) / 6; break;
+            }
+        }
+
+        return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+    },
+
+    /**
+     * Convert HSL values to hex color
+     * @param {number} h - Hue (0-360)
+     * @param {number} s - Saturation (0-100)
+     * @param {number} l - Lightness (0-100)
+     * @returns {string} Hex color string
+     */
+    hslToHex(h, s, l) {
+        s /= 100;
+        l /= 100;
+
+        const a = s * Math.min(l, 1 - l);
+        const f = (n) => {
+            const k = (n + h / 30) % 12;
+            const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+            return Math.round(255 * color).toString(16).padStart(2, '0');
+        };
+
+        return `#${f(0)}${f(8)}${f(4)}`;
+    },
+
+    /**
+     * Adjust lightness of a hex color
+     * @param {string} hex - Hex color
+     * @param {number} amount - Lightness adjustment (-100 to 100)
+     * @returns {string} Adjusted hex color
+     */
+    adjustLightness(hex, amount) {
+        const hsl = this.hexToHSL(hex);
+        hsl.l = Math.max(0, Math.min(100, hsl.l + amount));
+        return this.hslToHex(hsl.h, hsl.s, hsl.l);
+    },
+
+    /**
+     * Convert hex color to RGB string for use in rgba()
+     * @param {string} hex - Hex color
+     * @returns {string} RGB string (e.g., '74, 144, 164')
+     */
+    hexToRGBString(hex) {
+        hex = hex.replace('#', '');
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        return `${r}, ${g}, ${b}`;
     }
 };
 

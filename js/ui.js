@@ -1332,23 +1332,15 @@ const UI = {
         const notification = document.createElement('div');
         notification.className = `notification notification-${type}`;
         notification.textContent = message;
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            border-radius: 6px;
-            background-color: ${type === 'success' ? '#d4edda' : type === 'error' ? '#f8d7da' : '#d1ecf1'};
-            color: ${type === 'success' ? '#155724' : type === 'error' ? '#721c24' : '#0c5460'};
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            z-index: 2000;
-            animation: slideIn 0.3s ease;
-        `;
 
         document.body.appendChild(notification);
 
+        // Trigger reflow then add visible class for CSS transition
+        notification.offsetHeight;
+        notification.classList.add('visible');
+
         setTimeout(() => {
-            notification.style.animation = 'slideOut 0.3s ease';
+            notification.classList.remove('visible');
             setTimeout(() => notification.remove(), 300);
         }, 3000);
     },
@@ -1363,20 +1355,6 @@ const UI = {
         return str.charAt(0).toUpperCase() + str.slice(1);
     }
 };
-
-// Add CSS animation for notifications
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideIn {
-        from { transform: translateX(100%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOut {
-        from { transform: translateX(0); opacity: 1; }
-        to { transform: translateX(100%); opacity: 0; }
-    }
-`;
-document.head.appendChild(style);
 
 // Export for use in other modules
 window.UI = UI;

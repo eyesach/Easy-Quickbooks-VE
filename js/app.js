@@ -12,6 +12,15 @@ const App = {
     pendingInlineStatusChange: null, // {id, newStatus, selectElement}
     currentSortMode: 'entryDate',
 
+    // Theme preset palettes: { c1: primary, c2: accent, c3: background, c4: surface }
+    themePresets: {
+        default:  { c1: '#4a90a4', c2: '#e8f0f3', c3: '#f8f9fa', c4: '#ffffff' },
+        ocean:    { c1: '#9EBAC2', c2: '#BAE0EB', c3: '#f0f7fa', c4: '#ffffff' },
+        forest:   { c1: '#2d6a4f', c2: '#d8f3dc', c3: '#f0f7f0', c4: '#ffffff' },
+        sunset:   { c1: '#e76f51', c2: '#fce4d6', c3: '#fdf8f4', c4: '#ffffff' },
+        midnight: { c1: '#6c63ff', c2: '#e8e6ff', c3: '#f5f4ff', c4: '#ffffff' },
+    },
+
     /**
      * Initialize the application
      */
@@ -32,6 +41,9 @@ const App = {
             const owner = Database.getJournalOwner();
             document.getElementById('journalOwner').value = owner;
             UI.updateJournalTitle(owner);
+
+            // Load and apply saved theme
+            this.loadAndApplyTheme();
 
             // Load and render data
             this.refreshAll();
@@ -268,6 +280,96 @@ const App = {
             this.refreshPnL();
         } else {
             journalTab.style.display = 'block';
+        }
+    },
+
+    // ==================== THEME ====================
+
+    /**
+     * Load theme settings from DB and apply
+     */
+    loadAndApplyTheme() {
+        const preset = Database.getThemePreset();
+        const customColors = Database.getThemeColors();
+        const isDark = Database.getThemeDark();
+
+        // Sync UI controls
+        const presetSelect = document.getElementById('themePreset');
+        if (presetSelect) presetSelect.value = preset;
+
+        const darkBtn = document.getElementById('darkModeToggle');
+        if (darkBtn) darkBtn.textContent = isDark ? '\u263E' : '\u2600';
+
+        // Show/hide custom picker
+        const picker = document.getElementById('customColorPicker');
+        if (picker) picker.style.display = preset === 'custom' ? 'flex' : 'none';
+
+        // Sync color inputs if custom
+        if (preset === 'custom' && customColors) {
+            ['themeC1', 'themeC2', 'themeC3', 'themeC4'].forEach((id, i) => {
+                const input = document.getElementById(id);
+                if (input) input.value = customColors[`c${i + 1}`] || '#000000';
+            });
+        }
+
+        this.applyTheme(preset, customColors, isDark);
+    },
+
+    /**
+     * Apply theme colors to the document
+     * @param {string} preset - Preset name or 'custom'
+     * @param {Object|null} customColors - Custom color object {c1, c2, c3, c4}
+     * @param {boolean} isDark - Dark mode enabled
+     */
+    applyTheme(preset, customColors, isDark) {
+        const colors = preset === 'custom' && customColors
+            ? customColors
+            : (this.themePresets[preset] || this.themePresets.default);
+
+        const root = document.documentElement;
+
+        // Primary and derived
+        root.style.setProperty('--color-primary', colors.c1);
+        root.style.setProperty('--color-primary-hover', Utils.adjustLightness(colors.c1, -12));
+        root.style.setProperty('--color-primary-light', Utils.adjustLightness(colors.c1, -6));
+        root.style.setProperty('--color-primary-rgb', Utils.hexToRGBString(colors.c1));
+
+        // Accent (section headers, hover tints)
+        root.style.setProperty('--color-accent-bg', colors.c2);
+        root.style.setProperty('--color-accent-bg-hover', Utils.adjustLightness(colors.c2, -5));
+
+        if (isDark) {
+            // Dark mode overrides
+            root.setAttribute('data-theme', 'dark');
+            root.style.setProperty('--color-bg', '#1a1a2e');
+            root.style.setProperty('--color-bg-dark', '#141425');
+            root.style.setProperty('--color-white', '#1e1e30');
+            root.style.setProperty('--color-text', '#e0e0e0');
+            root.style.setProperty('--color-text-muted', '#a0a0b0');
+            root.style.setProperty('--color-border', '#2a2a4a');
+            root.style.setProperty('--shadow-sm', '0 1px 3px rgba(0,0,0,0.3)');
+            root.style.setProperty('--shadow-md', '0 4px 6px rgba(0,0,0,0.4)');
+            // Lighten primary slightly for dark bg contrast
+            const primaryHSL = Utils.hexToHSL(colors.c1);
+            if (primaryHSL.l < 50) {
+                root.style.setProperty('--color-primary', Utils.adjustLightness(colors.c1, 15));
+                root.style.setProperty('--color-primary-hover', Utils.adjustLightness(colors.c1, 5));
+                root.style.setProperty('--color-primary-rgb', Utils.hexToRGBString(Utils.adjustLightness(colors.c1, 15)));
+            }
+            // Darken accent for dark mode
+            root.style.setProperty('--color-accent-bg', Utils.adjustLightness(colors.c2, -60));
+            root.style.setProperty('--color-accent-bg-hover', Utils.adjustLightness(colors.c2, -55));
+        } else {
+            // Light mode
+            root.setAttribute('data-theme', 'light');
+            root.style.setProperty('--color-bg', colors.c3);
+            root.style.setProperty('--color-bg-dark', Utils.adjustLightness(colors.c3, -3));
+            root.style.setProperty('--color-white', colors.c4);
+            root.style.setProperty('--color-text', '#212529');
+            root.style.setProperty('--color-text-muted', '#6c757d');
+            root.style.setProperty('--color-border', '#dee2e6');
+            root.style.setProperty('--shadow-sm', '0 1px 3px rgba(0,0,0,0.08)');
+            root.style.setProperty('--shadow-md', '0 4px 6px rgba(0,0,0,0.1)');
         }
     },
 
@@ -683,6 +785,57 @@ const App = {
         document.getElementById('plTaxMode').addEventListener('change', (e) => {
             Database.setPLTaxMode(e.target.value);
             this.refreshPnL();
+        });
+
+        // ==================== THEME CONTROLS ====================
+
+        // Theme preset dropdown
+        document.getElementById('themePreset').addEventListener('change', (e) => {
+            const preset = e.target.value;
+            Database.setThemePreset(preset);
+
+            const picker = document.getElementById('customColorPicker');
+            if (preset === 'custom') {
+                picker.style.display = 'flex';
+                // Initialize custom colors from current preset or saved
+                let colors = Database.getThemeColors();
+                if (!colors) {
+                    colors = this.themePresets.default;
+                    Database.setThemeColors(colors);
+                }
+                ['themeC1', 'themeC2', 'themeC3', 'themeC4'].forEach((id, i) => {
+                    const input = document.getElementById(id);
+                    if (input) input.value = colors[`c${i + 1}`] || '#000000';
+                });
+                this.applyTheme('custom', colors, Database.getThemeDark());
+            } else {
+                picker.style.display = 'none';
+                this.applyTheme(preset, null, Database.getThemeDark());
+            }
+        });
+
+        // Dark mode toggle
+        document.getElementById('darkModeToggle').addEventListener('click', () => {
+            const isDark = !Database.getThemeDark();
+            Database.setThemeDark(isDark);
+            document.getElementById('darkModeToggle').textContent = isDark ? '\u263E' : '\u2600';
+            const preset = Database.getThemePreset();
+            const customColors = Database.getThemeColors();
+            this.applyTheme(preset, customColors, isDark);
+        });
+
+        // Custom color picker inputs
+        ['themeC1', 'themeC2', 'themeC3', 'themeC4'].forEach((id) => {
+            document.getElementById(id).addEventListener('input', Utils.debounce(() => {
+                const colors = {
+                    c1: document.getElementById('themeC1').value,
+                    c2: document.getElementById('themeC2').value,
+                    c3: document.getElementById('themeC3').value,
+                    c4: document.getElementById('themeC4').value,
+                };
+                Database.setThemeColors(colors);
+                this.applyTheme('custom', colors, Database.getThemeDark());
+            }, 100));
         });
 
         // ==================== ADD FOLDER ENTRIES ====================
@@ -1675,6 +1828,9 @@ const App = {
 
             // Repopulate year dropdowns (in case data spans different years)
             UI.populateYearDropdowns();
+
+            // Reload theme from loaded database
+            this.loadAndApplyTheme();
 
             this.refreshAll();
             UI.showNotification('Database loaded successfully', 'success');

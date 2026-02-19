@@ -7,6 +7,7 @@
     --color-border: #dee2e6;
     --color-primary: #4a90a4;
     --color-primary-hover: #3d7a8c;
+    --color-primary-rgb: 74, 144, 164;
     --color-secondary: #6c757d;
     --color-secondary-hover: #5a6268;
     --color-danger: #dc3545;
@@ -20,6 +21,21 @@
     --color-payable-light: #bd2130;
     --color-primary-light: #3a7a94;
     --color-bg-dark: #eef0f2;
+    --color-accent-bg: #e8f0f3;
+    --color-accent-bg-hover: #dce8ec;
+    --color-bg-late: #f5f3ee;
+    --color-status-pending-bg: #fff3cd;
+    --color-status-pending-text: #856404;
+    --color-status-paid-bg: #d4edda;
+    --color-status-paid-text: #155724;
+    --color-status-overdue-bg: #fde8e0;
+    --color-status-overdue-text: #9c4221;
+    --color-notification-success-bg: #d4edda;
+    --color-notification-success-text: #155724;
+    --color-notification-error-bg: #f8d7da;
+    --color-notification-error-text: #721c24;
+    --color-notification-info-bg: #d1ecf1;
+    --color-notification-info-text: #0c5460;
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
     --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
     --radius: 8px;
@@ -235,20 +251,20 @@ body {
 
 /* Late payment indicator for summary cards - slightly different shade */
 .summary-card.has-late {
-    background-color: #f5f3ee;
+    background-color: var(--color-bg-late);
     box-shadow: var(--shadow-sm), inset 0 0 0 1px rgba(0,0,0,0.04);
 }
 
 .cash-balance.has-late .summary-value {
-    color: #3d7a8c; /* slightly darker/muted shade of primary */
+    color: var(--color-primary-hover);
 }
 
 .receivables.has-late .summary-value {
-    color: #1e7e34; /* slightly darker shade of receivable green */
+    color: var(--color-receivable-light);
 }
 
 .payables.has-late .summary-value {
-    color: #bd2130; /* slightly darker shade of payable red */
+    color: var(--color-payable-light);
 }
 
 .late-indicator {
@@ -389,7 +405,7 @@ body {
 }
 
 .summary-table tbody tr:hover {
-    background-color: rgba(74, 144, 164, 0.04);
+    background-color: rgba(var(--color-primary-rgb), 0.04);
 }
 
 .summary-table tfoot td {
@@ -496,7 +512,7 @@ body {
 .form-group textarea:focus {
     outline: none;
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgba(74, 144, 164, 0.1);
+    box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.1);
 }
 
 .form-group input[readonly] {
@@ -527,7 +543,7 @@ body {
 .month-year-select select:focus {
     outline: none;
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgba(74, 144, 164, 0.1);
+    box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.1);
 }
 
 .category-input-wrapper,
@@ -708,7 +724,7 @@ body {
 }
 
 .transaction-table tbody tr:hover {
-    background-color: rgba(74, 144, 164, 0.04);
+    background-color: rgba(var(--color-primary-rgb), 0.04);
 }
 
 .transaction-table tbody tr:hover .btn-icon:not(.always-visible) {
@@ -721,7 +737,7 @@ body {
 }
 
 .transaction-table tbody tr.late-payment-row:hover {
-    background-color: rgba(74, 144, 164, 0.06);
+    background-color: rgba(var(--color-primary-rgb), 0.06);
 }
 
 /* Amount styling */
@@ -747,8 +763,8 @@ body {
 }
 
 .month-due-badge.overdue {
-    background-color: #fde8e0;
-    color: #9c4221;
+    background-color: var(--color-status-overdue-bg);
+    color: var(--color-status-overdue-text);
 }
 
 /* Status badges */
@@ -763,23 +779,23 @@ body {
 }
 
 .status-pending {
-    background-color: #fff3cd;
-    color: #856404;
+    background-color: var(--color-status-pending-bg);
+    color: var(--color-status-pending-text);
 }
 
 .status-received {
-    background-color: #d4edda;
-    color: #155724;
+    background-color: var(--color-status-paid-bg);
+    color: var(--color-status-paid-text);
 }
 
 .status-paid {
-    background-color: #d4edda;
-    color: #155724;
+    background-color: var(--color-status-paid-bg);
+    color: var(--color-status-paid-text);
 }
 
 .status-overdue {
-    background-color: #fde8e0;
-    color: #9c4221;
+    background-color: var(--color-status-overdue-bg);
+    color: var(--color-status-overdue-text);
 }
 
 /* Inline status dropdown in table */
@@ -810,19 +826,19 @@ body {
 }
 
 .status-select.status-pending {
-    background-color: #fff3cd;
-    color: #856404;
+    background-color: var(--color-status-pending-bg);
+    color: var(--color-status-pending-text);
 }
 
 .status-select.status-received,
 .status-select.status-paid {
-    background-color: #d4edda;
-    color: #155724;
+    background-color: var(--color-status-paid-bg);
+    color: var(--color-status-paid-text);
 }
 
 .status-select.status-overdue {
-    background-color: #fde8e0;
-    color: #9c4221;
+    background-color: var(--color-status-overdue-bg);
+    color: var(--color-status-overdue-text);
 }
 
 /* Late payment info */
@@ -939,7 +955,7 @@ body {
 }
 
 .folder-header:hover {
-    background-color: #e9ecef;
+    background-color: var(--color-accent-bg-hover);
 }
 
 .folder-header-left {
@@ -1054,8 +1070,8 @@ body {
 
 .bulk-preview-warning {
     padding: 10px 12px;
-    background-color: #fff3cd;
-    color: #856404;
+    background-color: var(--color-status-pending-bg);
+    color: var(--color-status-pending-text);
     font-size: 0.8rem;
     border-bottom: 1px solid var(--color-border);
 }
@@ -1150,14 +1166,14 @@ body {
 .cashflow-section-header td {
     font-weight: 700;
     text-transform: uppercase;
-    background: #e8f0f3;
+    background: var(--color-accent-bg);
     color: var(--color-text);
     letter-spacing: 0.5px;
     font-size: 0.75rem;
 }
 
 .cashflow-section-header td:first-child {
-    background: #e8f0f3;
+    background: var(--color-accent-bg);
 }
 
 .cashflow-subtotal td {
@@ -1255,7 +1271,7 @@ body {
     border: 1px solid var(--color-border);
     border-radius: 4px;
     font-size: 0.85rem;
-    background: white;
+    background: var(--color-white);
 }
 
 .pnl-spreadsheet-wrapper {
@@ -1344,7 +1360,7 @@ body {
 }
 
 .pnl-editable:hover {
-    background-color: #e8f4f8;
+    background-color: var(--color-accent-bg);
 }
 
 .pnl-overridden {
@@ -1565,6 +1581,134 @@ body {
         flex-direction: column;
         gap: 8px;
     }
+}
+
+/* Theme Controls */
+.theme-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.theme-controls select {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-white);
+    color: var(--color-text);
+    cursor: pointer;
+}
+
+.theme-controls select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+.custom-color-picker {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.custom-color-picker input[type="color"] {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 2px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    background: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.custom-color-picker input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 2px;
+}
+
+.custom-color-picker input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: 2px;
+}
+
+#darkModeToggle {
+    font-size: 1rem;
+    line-height: 1;
+    padding: 4px 8px;
+    min-width: 32px;
+}
+
+/* Notification classes */
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    font-weight: 500;
+    z-index: 2000;
+    opacity: 0;
+    transform: translateX(20px);
+    transition: opacity 0.3s, transform 0.3s;
+    box-shadow: var(--shadow-md);
+}
+
+.notification.visible {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.notification-success {
+    background-color: var(--color-notification-success-bg);
+    color: var(--color-notification-success-text);
+}
+
+.notification-error {
+    background-color: var(--color-notification-error-bg);
+    color: var(--color-notification-error-text);
+}
+
+.notification-info {
+    background-color: var(--color-notification-info-bg);
+    color: var(--color-notification-info-text);
+}
+
+/* Dark mode adjustments */
+[data-theme="dark"] .cashflow-table th:first-child,
+[data-theme="dark"] .cashflow-table td:first-child {
+    background: var(--color-white);
+}
+
+[data-theme="dark"] .cashflow-subtotal td:first-child,
+[data-theme="dark"] .cashflow-subtotal td,
+[data-theme="dark"] .cashflow-total td:first-child,
+[data-theme="dark"] .cashflow-total td {
+    background: var(--color-bg-dark);
+}
+
+[data-theme="dark"] .pnl-table th:first-child,
+[data-theme="dark"] .pnl-table th {
+    background-color: var(--color-bg);
+}
+
+[data-theme="dark"] .pnl-subtotal td,
+[data-theme="dark"] .pnl-subtotal td:first-child {
+    background-color: var(--color-bg);
+}
+
+[data-theme="dark"] .pnl-total td,
+[data-theme="dark"] .pnl-total td:first-child {
+    background-color: var(--color-bg-dark);
+}
+
+[data-theme="dark"] .modal {
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+[data-theme="dark"] .late-payment-row {
+    background-color: rgba(255, 255, 255, 0.02);
 }
 
 /* Scrollbar styling */

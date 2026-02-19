@@ -21,6 +21,23 @@
                 <button id="newEntryBtn" class="btn btn-primary">+ New Entry</button>
                 <button id="addFolderEntriesBtn" class="btn btn-primary">+ Add Folder</button>
                 <button id="manageCategoriesBtn" class="btn btn-secondary">Manage Categories</button>
+                <div class="theme-controls">
+                    <select id="themePreset" title="Theme">
+                        <option value="default">Default</option>
+                        <option value="ocean">Ocean</option>
+                        <option value="forest">Forest</option>
+                        <option value="sunset">Sunset</option>
+                        <option value="midnight">Midnight</option>
+                        <option value="custom">Custom...</option>
+                    </select>
+                    <div id="customColorPicker" class="custom-color-picker" style="display:none;">
+                        <input type="color" id="themeC1" value="#4a90a4" title="Primary">
+                        <input type="color" id="themeC2" value="#e8f0f3" title="Accent">
+                        <input type="color" id="themeC3" value="#f8f9fa" title="Background">
+                        <input type="color" id="themeC4" value="#ffffff" title="Surface">
+                    </div>
+                    <button id="darkModeToggle" class="btn btn-small" title="Toggle dark mode">&#9728;</button>
+                </div>
                 <button id="saveDbBtn" class="btn btn-secondary">Save</button>
                 <button id="saveAsDbBtn" class="btn btn-secondary">Save As...</button>
                 <button id="loadDbBtn" class="btn btn-secondary">Load</button>

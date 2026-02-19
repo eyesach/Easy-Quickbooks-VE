@@ -910,6 +910,69 @@ const Database = {
         this.autoSave();
     },
 
+    // ==================== THEME SETTINGS ====================
+
+    /**
+     * Get theme preset name
+     * @returns {string} Preset name (default, ocean, forest, sunset, midnight, custom)
+     */
+    getThemePreset() {
+        const result = this.db.exec("SELECT value FROM app_meta WHERE key = 'theme_preset'");
+        if (result.length === 0 || result[0].values.length === 0) return 'default';
+        return result[0].values[0][0] || 'default';
+    },
+
+    /**
+     * Set theme preset name
+     * @param {string} name - Preset name
+     */
+    setThemePreset(name) {
+        this.db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('theme_preset', ?)", [name]);
+        this.autoSave();
+    },
+
+    /**
+     * Get custom theme colors
+     * @returns {Object|null} Color object {c1, c2, c3, c4} or null
+     */
+    getThemeColors() {
+        const result = this.db.exec("SELECT value FROM app_meta WHERE key = 'theme_colors'");
+        if (result.length === 0 || result[0].values.length === 0) return null;
+        try {
+            return JSON.parse(result[0].values[0][0]);
+        } catch (e) {
+            return null;
+        }
+    },
+
+    /**
+     * Set custom theme colors
+     * @param {Object} colors - Color object {c1, c2, c3, c4}
+     */
+    setThemeColors(colors) {
+        this.db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('theme_colors', ?)", [JSON.stringify(colors)]);
+        this.autoSave();
+    },
+
+    /**
+     * Get dark mode setting
+     * @returns {boolean} True if dark mode enabled
+     */
+    getThemeDark() {
+        const result = this.db.exec("SELECT value FROM app_meta WHERE key = 'theme_dark'");
+        if (result.length === 0 || result[0].values.length === 0) return false;
+        return result[0].values[0][0] === '1';
+    },
+
+    /**
+     * Set dark mode setting
+     * @param {boolean} isDark - True for dark mode
+     */
+    setThemeDark(isDark) {
+        this.db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('theme_dark', ?)", [isDark ? '1' : '0']);
+        this.autoSave();
+    },
+
     /**
      * Get all P&L overrides
      * @returns {Object} Map of "categoryId-month" => override_amount
