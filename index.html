@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accounting Journal</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-title">
+                <div class="journal-name-wrapper">
+                    <input type="text" id="journalOwner" class="journal-owner-input"
+                           placeholder="Company/Name" title="Enter owner or company name">
+                    <span id="journalSuffix" class="journal-suffix">Accounting Journal</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button id="newEntryBtn" class="btn btn-primary">+ New Entry</button>
+                <button id="addFolderEntriesBtn" class="btn btn-primary">+ Add Folder</button>
+                <button id="manageCategoriesBtn" class="btn btn-secondary">Manage Categories</button>
+                <button id="saveDbBtn" class="btn btn-secondary">Save</button>
+                <button id="saveAsDbBtn" class="btn btn-secondary">Save As...</button>
+                <button id="loadDbBtn" class="btn btn-secondary">Load</button>
+                <input type="file" id="loadDbInput" accept=".db" style="display: none;">
+            </div>
+        </header>
+
+        <!-- Summary Cards -->
+        <section class="summary-section">
+            <div class="summary-card cash-balance" id="cashBalanceCard">
+                <span class="summary-label">Cash Balance</span>
+                <span class="summary-value" id="cashBalance">$0.00</span>
+                <span class="late-indicator" id="cashBalanceLate" style="display: none;"></span>
+            </div>
+            <div class="summary-card receivables" id="receivablesCard">
+                <span class="summary-label">Accounts Receivable</span>
+                <span class="summary-value" id="accountsReceivable">$0.00</span>
+            </div>
+            <div class="summary-card payables" id="payablesCard">
+                <span class="summary-label">Accounts Payable</span>
+                <span class="summary-value" id="accountsPayable">$0.00</span>
+            </div>
+        </section>
+
+        <!-- Main Tab Navigation -->
+        <nav class="main-tabs">
+            <button class="main-tab active" data-tab="journal">Journal</button>
+            <button class="main-tab" data-tab="cashflow">Cash Flow Summary</button>
+            <button class="main-tab" data-tab="pnl">Profit &amp; Loss</button>
+        </nav>
+
+        <!-- Journal Tab -->
+        <div id="journalTab">
+            <!-- Toolbar -->
+            <section class="toolbar-section">
+                <div class="toolbar-right">
+                    <button id="exportCsvBtn" class="btn btn-secondary btn-small">Export CSV</button>
+                </div>
+            </section>
+
+        <!-- Entry Form Modal -->
+        <div id="entryModal" class="modal">
+            <div class="modal-content modal-entry">
+                <h3 id="formTitle">Add New Entry</h3>
+                <form id="entryForm" class="entry-form">
+                    <input type="hidden" id="editingId" value="">
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="entryDate">Entry Date</label>
+                            <div class="date-input-wrapper">
+                                <input type="date" id="entryDate" required>
+                                <button type="button" id="todayBtn" class="btn btn-small">Today</button>
+                            </div>
+                        </div>
+                        <div class="form-group category-group">
+                            <label for="category">Category</label>
+                            <div class="category-input-wrapper">
+                                <select id="category" required>
+                                    <option value="">Select category...</option>
+                                </select>
+                                <button type="button" id="addCategoryBtn" class="btn btn-small">+ New</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="amount">Amount</label>
+                            <input type="number" id="amount" step="0.01" min="0" placeholder="0.00" required>
+                        </div>
+                        <div class="form-group" id="pretaxAmountGroup" style="display: none;">
+                            <label for="pretaxAmount">Pretax Amount</label>
+                            <input type="number" id="pretaxAmount" step="0.01" min="0" placeholder="0.00">
+                        </div>
+                        <div class="form-group" id="paymentForGroup" style="display: none;">
+                            <label for="paymentForMonth">Payment For</label>
+                            <select id="paymentForMonth">
+                                <option value="">Select month...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Type</label>
+                            <div class="radio-group">
+                                <label class="radio-label">
+                                    <input type="radio" name="transactionType" value="receivable" checked>
+                                    <span>Receivable</span>
+                                </label>
+                                <label class="radio-label">
+                                    <input type="radio" name="transactionType" value="payable">
+                                    <span>Payable</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="status">Status</label>
+                            <select id="status" required>
+                                <option value="pending">Pending</option>
+                                <option value="received">Received</option>
+                                <option value="paid">Paid</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="dateProcessedGroup" style="display: none;">
+                            <label for="dateProcessed">Date Processed</label>
+                            <input type="date" id="dateProcessed">
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Month Due</label>
+                            <div class="month-year-select">
+                                <select id="monthDueMonth">
+                                    <option value="">Month...</option>
+                                    <option value="01">January</option>
+                                    <option value="02">February</option>
+                                    <option value="03">March</option>
+                                    <option value="04">April</option>
+                                    <option value="05">May</option>
+                                    <option value="06">June</option>
+                                    <option value="07">July</option>
+                                    <option value="08">August</option>
+                                    <option value="09">September</option>
+                                    <option value="10">October</option>
+                                    <option value="11">November</option>
+                                    <option value="12">December</option>
+                                </select>
+                                <select id="monthDueYear">
+                                    <option value="">Year...</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group" id="monthPaidGroup" style="display: none;">
+                            <label>Month Paid <span class="required-indicator">*</span></label>
+                            <div class="month-year-select">
+                                <select id="monthPaidMonth">
+                                    <option value="">Month...</option>
+                                    <option value="01">January</option>
+                                    <option value="02">February</option>
+                                    <option value="03">March</option>
+                                    <option value="04">April</option>
+                                    <option value="05">May</option>
+                                    <option value="06">June</option>
+                                    <option value="07">July</option>
+                                    <option value="08">August</option>
+                                    <option value="09">September</option>
+                                    <option value="10">October</option>
+                                    <option value="11">November</option>
+                                    <option value="12">December</option>
+                                </select>
+                                <select id="monthPaidYear">
+                                    <option value="">Year...</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group notes-group">
+                            <label for="notes">Notes</label>
+                            <input type="text" id="notes" placeholder="Optional notes...">
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" id="cancelEditBtn" class="btn btn-secondary">Cancel</button>
+                        <button type="submit" id="submitBtn" class="btn btn-primary">Add Entry</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <section class="filters-section">
+            <div class="filter-group sort-group">
+                <label for="sortMode">Sort by:</label>
+                <select id="sortMode">
+                    <option value="entryDate">Entry Date</option>
+                    <option value="monthDue">Month Due</option>
+                    <option value="category">Category</option>
+                </select>
+            </div>
+            <div class="filter-separator"></div>
+            <div class="filter-group">
+                <select id="filterFolder">
+                    <option value="">All Folders</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <select id="filterType">
+                    <option value="">All Types</option>
+                    <option value="receivable">Receivable</option>
+                    <option value="payable">Payable</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <select id="filterStatus">
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="received">Received</option>
+                    <option value="paid">Paid</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <select id="filterMonth">
+                    <option value="">All Months</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <select id="filterCategory">
+                    <option value="">All Categories</option>
+                </select>
+            </div>
+        </section>
+
+        <!-- Transactions Table -->
+        <section class="transactions-section">
+            <div id="transactionsContainer">
+                <p class="empty-state">No transactions yet. Add your first entry above.</p>
+            </div>
+        </section>
+        </div><!-- /journalTab -->
+
+        <!-- Cash Flow Summary Tab -->
+        <div id="cashflowTab" style="display: none;">
+            <section class="cashflow-section">
+                <div class="cashflow-header">
+                    <h3>Cash Flow Summary</h3>
+                </div>
+                <div id="cashflowSpreadsheet" class="cashflow-spreadsheet-wrapper">
+                    <p class="empty-state">No completed transactions yet.</p>
+                </div>
+            </section>
+        </div>
+
+        <!-- Profit & Loss Tab -->
+        <div id="pnlTab" style="display: none;">
+            <section class="pnl-section">
+                <div class="pnl-header">
+                    <h3>Profit &amp; Loss Statement</h3>
+                    <div class="pnl-controls">
+                        <label for="plTaxMode">Tax Mode:</label>
+                        <select id="plTaxMode">
+                            <option value="corporate">Corporate (21%)</option>
+                            <option value="passthrough">Pass-through</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="pnlSpreadsheet" class="pnl-spreadsheet-wrapper">
+                    <p class="empty-state">No completed transactions yet.</p>
+                </div>
+            </section>
+        </div>
+
+        <!-- Category Modal (Add/Edit) -->
+        <div id="categoryModal" class="modal">
+            <div class="modal-content modal-category">
+                <h3 id="categoryModalTitle">Add New Category</h3>
+                <form id="categoryForm">
+                    <input type="hidden" id="editingCategoryId" value="">
+                    <div class="form-group">
+                        <label for="categoryName">Category Name</label>
+                        <input type="text" id="categoryName" required placeholder="e.g., Office Supplies">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="categoryDefaultAmount">Typical Price</label>
+                            <input type="number" id="categoryDefaultAmount" step="0.01" min="0" placeholder="0.00">
+                        </div>
+                        <div class="form-group">
+                            <label for="categoryDefaultType">Typical Type</label>
+                            <select id="categoryDefaultType">
+                                <option value="">None</option>
+                                <option value="receivable">Receivable</option>
+                                <option value="payable">Payable</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="categoryFolder">Folder</label>
+                        <div class="category-input-wrapper">
+                            <select id="categoryFolder">
+                                <option value="">No Folder</option>
+                            </select>
+                            <button type="button" id="addFolderFromCategoryBtn" class="btn btn-small">+ Folder</button>
+                        </div>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="categoryMonthly">
+                            <span>Monthly payment (e.g., Loan, Rent, Subscription)</span>
+                        </label>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="categoryShowOnPl">
+                            <span>Hide from Profit &amp; Loss</span>
+                        </label>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label" style="padding-left: 24px;">
+                            <input type="checkbox" id="categoryCogs">
+                            <span>Cost of Goods Sold</span>
+                        </label>
+                        <label class="checkbox-label" style="padding-left: 24px;">
+                            <input type="checkbox" id="categoryDepreciation">
+                            <span>Depreciation</span>
+                        </label>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="cancelCategoryBtn" class="btn btn-secondary">Cancel</button>
+                        <button type="submit" id="saveCategoryBtn" class="btn btn-primary">Add Category</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Manage Categories Modal -->
+        <div id="manageCategoriesModal" class="modal">
+            <div class="modal-content modal-wide">
+                <h3>Manage Categories</h3>
+                <div id="categoriesList" class="categories-list"></div>
+                <div class="form-actions">
+                    <button type="button" id="closeManageCategoriesBtn" class="btn btn-secondary">Close</button>
+                    <button type="button" id="addNewFolderBtn" class="btn btn-secondary">+ Folder</button>
+                    <button type="button" id="addNewCategoryFromManageBtn" class="btn btn-primary">+ Category</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Folder Modal (Add/Edit) -->
+        <div id="folderModal" class="modal">
+            <div class="modal-content">
+                <h3 id="folderModalTitle">Add New Folder</h3>
+                <form id="folderForm">
+                    <input type="hidden" id="editingFolderId" value="">
+                    <div class="form-group">
+                        <label for="folderName">Folder Name</label>
+                        <input type="text" id="folderName" required placeholder="e.g., Sales">
+                    </div>
+                    <div class="form-group">
+                        <label>Folder Type</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="folderType" value="none" checked>
+                                <span>None</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="folderType" value="payable">
+                                <span>Payable</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="folderType" value="receivable">
+                                <span>Receivable</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="cancelFolderBtn" class="btn btn-secondary">Cancel</button>
+                        <button type="submit" id="saveFolderBtn" class="btn btn-primary">Add Folder</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Delete Folder Confirmation Modal -->
+        <div id="deleteFolderModal" class="modal">
+            <div class="modal-content">
+                <h3>Delete Folder</h3>
+                <p id="deleteFolderMessage">Are you sure? Categories in this folder will become unfiled.</p>
+                <div class="form-actions">
+                    <button type="button" id="cancelDeleteFolderBtn" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="confirmDeleteFolderBtn" class="btn btn-danger">Delete</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Delete Category Confirmation Modal -->
+        <div id="deleteCategoryModal" class="modal">
+            <div class="modal-content">
+                <h3>Delete Category</h3>
+                <p id="deleteCategoryMessage">Are you sure you want to delete this category?</p>
+                <div class="form-actions">
+                    <button type="button" id="cancelDeleteCategoryBtn" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="confirmDeleteCategoryBtn" class="btn btn-danger">Delete</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Delete Transaction Confirmation Modal -->
+        <div id="deleteModal" class="modal">
+            <div class="modal-content">
+                <h3>Confirm Delete</h3>
+                <p>Are you sure you want to delete this transaction?</p>
+                <div class="form-actions">
+                    <button type="button" id="cancelDeleteBtn" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="confirmDeleteBtn" class="btn btn-danger">Delete</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Load Confirmation Modal -->
+        <div id="loadConfirmModal" class="modal">
+            <div class="modal-content">
+                <h3>Load Database</h3>
+                <p>Loading a database will replace all current data. Continue?</p>
+                <div class="form-actions">
+                    <button type="button" id="cancelLoadBtn" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="confirmLoadBtn" class="btn btn-primary">Load</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Save As Modal (fallback for browsers without File System Access API) -->
+        <div id="saveAsModal" class="modal">
+            <div class="modal-content">
+                <h3>Save Journal As</h3>
+                <div class="form-group">
+                    <label for="saveAsName">File Name</label>
+                    <div class="save-as-input">
+                        <input type="text" id="saveAsName" placeholder="my_journal" required>
+                        <span class="file-extension">.db</span>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="cancelSaveAsBtn" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="confirmSaveAsBtn" class="btn btn-primary">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Month Paid Prompt Modal (for inline status changes) -->
+        <div id="monthPaidPromptModal" class="modal">
+            <div class="modal-content">
+                <h3 id="monthPaidPromptTitle">Month Paid</h3>
+                <p>Select the month this was processed:</p>
+                <div class="form-group">
+                    <div class="month-year-select">
+                        <select id="promptMonthPaidMonth">
+                            <option value="">Month...</option>
+                            <option value="01">January</option>
+                            <option value="02">February</option>
+                            <option value="03">March</option>
+                            <option value="04">April</option>
+                            <option value="05">May</option>
+                            <option value="06">June</option>
+                            <option value="07">July</option>
+                            <option value="08">August</option>
+                            <option value="09">September</option>
+                            <option value="10">October</option>
+                            <option value="11">November</option>
+                            <option value="12">December</option>
+                        </select>
+                        <select id="promptMonthPaidYear">
+                            <option value="">Year...</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="cancelMonthPaidPromptBtn" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="confirmMonthPaidPromptBtn" class="btn btn-primary">Confirm</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Folder Entries Modal -->
+        <div id="addFolderEntriesModal" class="modal">
+            <div class="modal-content modal-wide">
+                <h3>Add Folder Entries</h3>
+                <p class="modal-description">Create entries for all categories in a folder at once. You can edit them afterwards.</p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="bulkFolder">Folder</label>
+                        <select id="bulkFolder" required>
+                            <option value="">Select folder...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Month Due</label>
+                        <div class="month-year-select">
+                            <select id="bulkMonth" required>
+                                <option value="">Month...</option>
+                                <option value="01">January</option>
+                                <option value="02">February</option>
+                                <option value="03">March</option>
+                                <option value="04">April</option>
+                                <option value="05">May</option>
+                                <option value="06">June</option>
+                                <option value="07">July</option>
+                                <option value="08">August</option>
+                                <option value="09">September</option>
+                                <option value="10">October</option>
+                                <option value="11">November</option>
+                                <option value="12">December</option>
+                            </select>
+                            <select id="bulkYear" required>
+                                <option value="">Year...</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="bulkEntryDate">Date Recorded</label>
+                        <input type="date" id="bulkEntryDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="bulkStatus">Status</label>
+                        <select id="bulkStatus" required>
+                            <option value="pending">Pending</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="bulkDateProcessedGroup" style="display: none;">
+                        <label for="bulkDateProcessed">Date Processed</label>
+                        <input type="date" id="bulkDateProcessed">
+                    </div>
+                    <div class="form-group" id="bulkMonthPaidGroup" style="display: none;">
+                        <label id="bulkMonthPaidLabel">Month Paid</label>
+                        <div class="month-year-select">
+                            <select id="bulkMonthPaid">
+                                <option value="">Month...</option>
+                                <option value="01">January</option>
+                                <option value="02">February</option>
+                                <option value="03">March</option>
+                                <option value="04">April</option>
+                                <option value="05">May</option>
+                                <option value="06">June</option>
+                                <option value="07">July</option>
+                                <option value="08">August</option>
+                                <option value="09">September</option>
+                                <option value="10">October</option>
+                                <option value="11">November</option>
+                                <option value="12">December</option>
+                            </select>
+                            <select id="bulkMonthPaidYear">
+                                <option value="">Year...</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div id="bulkPreview" class="bulk-preview"></div>
+                <div class="form-actions">
+                    <button type="button" id="cancelBulkBtn" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="confirmBulkBtn" class="btn btn-primary" disabled>Add Entries</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notes Tooltip (for hover display) -->
+        <div id="notesTooltip" class="notes-tooltip"></div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
