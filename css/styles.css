@@ -2229,55 +2229,103 @@ body {
     padding-left: 24px;
 }
 
-/* ==================== EQUITY INVESTORS ==================== */
+/* ==================== EQUITY SECTION (Assets & Equity Tab) ==================== */
 
-.equity-investors-section {
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 1px solid var(--color-border);
+.equity-section {
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 2px solid var(--color-border);
 }
 
-.equity-investors-header {
+.equity-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 8px;
+    margin-bottom: 16px;
 }
 
-.equity-investors-header h4 {
+.equity-header h3 {
     margin: 0;
-    font-size: 0.9rem;
+    font-size: 1rem;
+    font-weight: 600;
 }
 
-.investors-list {
+.equity-controls {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
+    gap: 8px;
 }
 
-.investor-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+.equity-display-panel {
+    margin-top: 8px;
+}
+
+.equity-display-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+
+.equity-display-table th {
+    text-align: left;
     padding: 8px 12px;
-    background: var(--color-bg);
-    border-radius: var(--radius-sm);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--color-text-muted);
+    border-bottom: 2px solid var(--color-border);
+}
+
+.equity-display-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border);
+    font-family: 'DM Mono', monospace;
     font-size: 0.8rem;
 }
 
-.investor-info {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+.equity-display-table td:first-child {
+    font-family: 'DM Sans', sans-serif;
 }
 
-.investor-info span {
-    font-size: 0.75rem;
+.equity-total-row td {
+    border-top: 2px solid var(--color-border);
+    padding-top: 12px;
+}
+
+.equity-detail-line {
+    margin-top: 8px;
+    font-size: 0.78rem;
     color: var(--color-text-muted);
-    font-family: 'DM Mono', monospace;
+    font-style: italic;
 }
 
-.investor-actions {
-    display: flex;
-    gap: 4px;
+.equity-fieldset {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    margin-bottom: 12px;
+}
+
+.equity-fieldset legend {
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding: 0 6px;
+    color: var(--color-text);
+}
+
+.status-received {
+    color: var(--color-success, #2d6a4f);
+    font-weight: 500;
+    font-size: 0.78rem;
+}
+
+.status-pending {
+    color: var(--color-warning, #e76f51);
+    font-style: italic;
+    font-size: 0.78rem;
+}
+
+.status-none {
+    color: var(--color-text-muted);
+    font-size: 0.78rem;
 }

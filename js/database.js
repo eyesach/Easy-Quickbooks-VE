@@ -1359,54 +1359,6 @@ const Database = {
         this.autoSave();
     },
 
-    // ==================== INVESTORS ====================
-
-    /**
-     * Get investors array from equity_config
-     * @returns {Array} Array of investor objects
-     */
-    getInvestors() {
-        const config = this.getEquityConfig();
-        return config.investors || [];
-    },
-
-    /**
-     * Add an investor to equity_config
-     * @param {Object} investor - { id, name, shares, price_per_share, investment_date }
-     */
-    addInvestor(investor) {
-        const config = this.getEquityConfig();
-        if (!config.investors) config.investors = [];
-        investor.id = investor.id || 'inv_' + Date.now();
-        config.investors.push(investor);
-        this.setEquityConfig(config);
-    },
-
-    /**
-     * Update an investor in equity_config
-     * @param {string} id - Investor ID
-     * @param {Object} data - Fields to update
-     */
-    updateInvestor(id, data) {
-        const config = this.getEquityConfig();
-        if (!config.investors) return;
-        const idx = config.investors.findIndex(inv => inv.id === id);
-        if (idx === -1) return;
-        Object.assign(config.investors[idx], data);
-        this.setEquityConfig(config);
-    },
-
-    /**
-     * Delete an investor from equity_config
-     * @param {string} id - Investor ID
-     */
-    deleteInvestor(id) {
-        const config = this.getEquityConfig();
-        if (!config.investors) return;
-        config.investors = config.investors.filter(inv => inv.id !== id);
-        this.setEquityConfig(config);
-    },
-
     // ==================== BALANCE SHEET QUERIES ====================
 
     /**

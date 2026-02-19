@@ -897,32 +897,13 @@ const App = {
             this.deleteAssetTargetId = null;
         });
 
-        // Equity config
+        // Equity config (in Assets & Equity tab)
         document.getElementById('editEquityBtn').addEventListener('click', () => this.openEquityModal());
         document.getElementById('equityForm').addEventListener('submit', (e) => {
             e.preventDefault();
             this.handleSaveEquity();
         });
         document.getElementById('cancelEquityBtn').addEventListener('click', () => UI.hideModal('equityModal'));
-
-        // Investor handlers (inside equity modal)
-        document.getElementById('addInvestorBtn').addEventListener('click', () => this.openInvestorModal());
-        document.getElementById('investorForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleSaveInvestor();
-        });
-        document.getElementById('cancelInvestorBtn').addEventListener('click', () => UI.hideModal('investorModal'));
-
-        // Investor list click delegation
-        document.getElementById('investorsList').addEventListener('click', (e) => {
-            const editBtn = e.target.closest('.edit-investor-btn');
-            const deleteBtn = e.target.closest('.delete-investor-btn');
-            const item = e.target.closest('.investor-item');
-            if (!item) return;
-            const invId = item.dataset.id;
-            if (editBtn) this.handleEditInvestor(invId);
-            if (deleteBtn) this.handleDeleteInvestor(invId);
-        });
 
         // ==================== FIXED ASSETS TAB ====================
 
@@ -1837,20 +1818,15 @@ const App = {
 
         const totalLiabilities = round2(ap + salesTaxPayable + totalLoanBalance);
 
-        // Equity (with investors)
+        // Equity — only include amounts if as-of month >= effective date
         const equityConfig = Database.getEquityConfig();
-        const investors = equityConfig.investors || [];
-        let commonStock, apicVal;
+        const seedEffective = (equityConfig.seed_received_date || equityConfig.seed_expected_date || '');
+        const apicEffective = (equityConfig.apic_received_date || equityConfig.apic_expected_date || '');
+        const seedMonth = seedEffective ? seedEffective.substring(0, 7) : '';
+        const apicMonth = apicEffective ? apicEffective.substring(0, 7) : '';
 
-        if (investors.length > 0) {
-            // Derive from investor data
-            commonStock = round2(investors.reduce((sum, inv) => sum + (inv.shares * equityConfig.common_stock_par), 0));
-            const totalInvested = round2(investors.reduce((sum, inv) => sum + (inv.shares * inv.price_per_share), 0));
-            apicVal = round2(totalInvested - commonStock);
-        } else {
-            commonStock = round2(equityConfig.common_stock_par * equityConfig.common_stock_shares);
-            apicVal = round2(equityConfig.apic || 0);
-        }
+        const commonStock = (seedMonth && seedMonth > asOfMonth) ? 0 : round2(equityConfig.common_stock_par * equityConfig.common_stock_shares);
+        const apicVal = (apicMonth && apicMonth > asOfMonth) ? 0 : round2(equityConfig.apic || 0);
 
         const retainedEarnings = round2(Database.getRetainedEarningsAsOf(asOfMonth, taxMode));
         const totalEquity = round2(commonStock + apicVal + retainedEarnings);
@@ -1867,7 +1843,6 @@ const App = {
             loanDetails, totalLoanBalance,
             totalLiabilities,
             commonStock, apic: apicVal, retainedEarnings, totalEquity,
-            investorDetails: investors,
             totalLiabilitiesAndEquity, isBalanced
         };
 
@@ -1903,6 +1878,9 @@ const App = {
     refreshFixedAssets() {
         const assets = Database.getFixedAssets();
         UI.renderFixedAssetsTab(assets, this.selectedAssetId);
+        // Also render equity section
+        const equityConfig = Database.getEquityConfig();
+        UI.renderEquitySection(equityConfig);
     },
 
     /**
@@ -2054,140 +2032,80 @@ const App = {
         document.getElementById('equityPar').value = config.common_stock_par || '';
         document.getElementById('equityShares').value = config.common_stock_shares || '';
         document.getElementById('equityApic').value = config.apic || '';
-        // Render investors list inside modal
-        this._renderInvestorsInModal();
+        document.getElementById('seedExpectedDate').value = config.seed_expected_date || '';
+        document.getElementById('seedReceivedDate').value = config.seed_received_date || '';
+        document.getElementById('apicExpectedDate').value = config.apic_expected_date || '';
+        document.getElementById('apicReceivedDate').value = config.apic_received_date || '';
+        document.getElementById('equityAutoTransaction').checked = true;
         UI.showModal('equityModal');
-    },
-
-    _renderInvestorsInModal() {
-        const investors = Database.getInvestors();
-        const container = document.getElementById('investorsList');
-        if (!container) return;
-
-        if (investors.length === 0) {
-            container.innerHTML = '<p class="empty-state" style="padding: 8px 0;">No investors added yet.</p>';
-            return;
-        }
-
-        container.innerHTML = investors.map(inv => `
-            <div class="investor-item" data-id="${Utils.escapeHtml(inv.id)}">
-                <div class="investor-info">
-                    <strong>${Utils.escapeHtml(inv.name)}</strong>
-                    <span>${inv.shares.toLocaleString()} shares @ ${Utils.formatCurrency(inv.price_per_share)}</span>
-                </div>
-                <div class="investor-actions">
-                    <button type="button" class="btn-icon edit-investor-btn" title="Edit">&#9998;</button>
-                    <button type="button" class="btn-icon delete-investor-btn" title="Delete">&times;</button>
-                </div>
-            </div>
-        `).join('');
     },
 
     handleSaveEquity() {
         const par = parseFloat(document.getElementById('equityPar').value) || 0;
         const shares = parseInt(document.getElementById('equityShares').value) || 0;
         const apic = parseFloat(document.getElementById('equityApic').value) || 0;
+        const seedExpected = document.getElementById('seedExpectedDate').value || null;
+        const seedReceived = document.getElementById('seedReceivedDate').value || null;
+        const apicExpected = document.getElementById('apicExpectedDate').value || null;
+        const apicReceived = document.getElementById('apicReceivedDate').value || null;
+        const autoTx = document.getElementById('equityAutoTransaction').checked;
 
         const config = Database.getEquityConfig();
+        const prevSeedReceived = config.seed_received_date || null;
+        const prevApicReceived = config.apic_received_date || null;
+
         config.common_stock_par = par;
         config.common_stock_shares = shares;
         config.apic = apic;
+        config.seed_expected_date = seedExpected;
+        config.seed_received_date = seedReceived;
+        config.apic_expected_date = apicExpected;
+        config.apic_received_date = apicReceived;
         Database.setEquityConfig(config);
-        UI.hideModal('equityModal');
-        UI.showNotification('Equity config saved', 'success');
-        this.refreshBalanceSheet();
-    },
 
-    // ==================== INVESTOR HANDLERS ====================
-
-    openInvestorModal() {
-        document.getElementById('investorForm').reset();
-        document.getElementById('editingInvestorId').value = '';
-        document.getElementById('investorModalTitle').textContent = 'Add Investor';
-        document.getElementById('saveInvestorBtn').textContent = 'Add Investor';
-        document.getElementById('investorDate').value = Utils.getTodayDate();
-        document.getElementById('investorAutoTransaction').checked = true;
-        UI.showModal('investorModal');
-        document.getElementById('investorName').focus();
-    },
-
-    handleSaveInvestor() {
-        const name = document.getElementById('investorName').value.trim();
-        const shares = parseInt(document.getElementById('investorShares').value);
-        const price = parseFloat(document.getElementById('investorPrice').value);
-        const date = document.getElementById('investorDate').value;
-        const autoTx = document.getElementById('investorAutoTransaction').checked;
-        const editingId = document.getElementById('editingInvestorId').value;
-
-        if (!name || isNaN(shares) || isNaN(price) || !date) {
-            UI.showNotification('Please fill in all fields', 'error');
-            return;
-        }
-
-        if (editingId) {
-            Database.updateInvestor(editingId, { name, shares, price_per_share: price, investment_date: date });
-            UI.showNotification('Investor updated', 'success');
-        } else {
-            const investor = { name, shares, price_per_share: price, investment_date: date };
-            Database.addInvestor(investor);
-            if (autoTx) {
-                this._autoCreateInvestmentTransaction(name, shares * price, date);
+        // Auto-create journal entries for newly received amounts
+        if (autoTx) {
+            const seedAmount = Math.round(par * shares * 100) / 100;
+            if (seedReceived && !prevSeedReceived && seedAmount > 0) {
+                this._autoCreateEquityTransaction('Seed Money (Common Stock)', seedAmount, seedExpected || seedReceived, seedReceived);
             }
-            UI.showNotification('Investor added', 'success');
+            if (apicReceived && !prevApicReceived && apic > 0) {
+                this._autoCreateEquityTransaction('Additional Paid-In Capital', apic, apicExpected || apicReceived, apicReceived);
+            }
         }
 
-        UI.hideModal('investorModal');
-        this._renderInvestorsInModal();
+        UI.hideModal('equityModal');
+        UI.showNotification('Equity saved', 'success');
+        this.refreshFixedAssets();
     },
 
-    _autoCreateInvestmentTransaction(name, amount, date) {
-        // Find or create an "Equity Investment" category (hidden from P&L — equity contribution, not revenue)
+    _autoCreateEquityTransaction(description, amount, expectedDate, receivedDate) {
+        // Find or create an "Equity Investment" category (hidden from P&L)
         let categories = Database.getCategories();
         let cat = categories.find(c => c.name === 'Equity Investment');
         let catId;
         if (!cat) {
-            // show_on_pl=true means hidden from P&L (inverted semantics)
             catId = Database.addCategory('Equity Investment', false, null, 'receivable', null, true, false, false, false);
         } else {
             catId = cat.id;
         }
 
-        const month = date.substring(0, 7);
+        const monthDue = expectedDate.substring(0, 7);
+        const monthPaid = receivedDate.substring(0, 7);
+
         Database.addTransaction({
-            entry_date: date,
+            entry_date: expectedDate,
             category_id: catId,
-            item_description: `Investment: ${name}`,
+            item_description: description,
             amount: amount,
             transaction_type: 'receivable',
             status: 'received',
-            month_due: month,
-            month_paid: month,
-            date_processed: date,
+            month_due: monthDue,
+            month_paid: monthPaid,
+            date_processed: receivedDate,
             source_type: 'investment',
             source_id: null
         });
-    },
-
-    handleEditInvestor(id) {
-        const investors = Database.getInvestors();
-        const inv = investors.find(i => i.id === id);
-        if (!inv) return;
-
-        document.getElementById('editingInvestorId').value = inv.id;
-        document.getElementById('investorName').value = inv.name;
-        document.getElementById('investorShares').value = inv.shares;
-        document.getElementById('investorPrice').value = inv.price_per_share;
-        document.getElementById('investorDate').value = inv.investment_date;
-        document.getElementById('investorAutoTransaction').checked = false;
-        document.getElementById('investorModalTitle').textContent = 'Edit Investor';
-        document.getElementById('saveInvestorBtn').textContent = 'Save Changes';
-        UI.showModal('investorModal');
-    },
-
-    handleDeleteInvestor(id) {
-        Database.deleteInvestor(id);
-        UI.showNotification('Investor removed', 'success');
-        this._renderInvestorsInModal();
     },
 
     // ==================== LOAN HANDLERS ====================

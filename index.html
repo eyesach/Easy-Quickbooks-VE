@@ -93,7 +93,7 @@
             <button class="main-tab" data-tab="cashflow">Cash Flow</button>
             <button class="main-tab" data-tab="pnl">P&amp;L</button>
             <button class="main-tab" data-tab="balancesheet">Balance Sheet</button>
-            <button class="main-tab" data-tab="assets">Fixed Assets</button>
+            <button class="main-tab" data-tab="assets">Assets &amp; Equity</button>
             <button class="main-tab" data-tab="loan">Loans</button>
         </nav>
 
@@ -341,7 +341,6 @@
                         <select id="bsMonthYear">
                             <option value="">Year...</option>
                         </select>
-                        <button id="editEquityBtn" class="btn btn-secondary btn-small">Equity Config</button>
                     </div>
                 </div>
                 <div id="balanceSheetContent" class="bs-content">
@@ -366,6 +365,15 @@
                         <p class="empty-state">Select an asset to view its depreciation schedule.</p>
                     </div>
                 </div>
+            </section>
+            <section class="equity-section">
+                <div class="equity-header">
+                    <h3>Stockholders' Equity</h3>
+                    <div class="equity-controls">
+                        <button id="editEquityBtn" class="btn btn-secondary btn-small">Edit Equity</button>
+                    </div>
+                </div>
+                <div id="equityDisplayPanel" class="equity-display-panel"></div>
             </section>
         </div>
 
@@ -463,71 +471,58 @@
 
         <!-- Equity Config Modal -->
         <div id="equityModal" class="modal">
-            <div class="modal-content">
-                <h3>Stockholders' Equity Configuration</h3>
+            <div class="modal-content modal-wide">
+                <h3>Stockholders' Equity</h3>
                 <form id="equityForm">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="equityPar">Par Value per Share</label>
-                            <input type="number" id="equityPar" step="0.001" min="0" placeholder="0.001">
+                    <fieldset class="equity-fieldset">
+                        <legend>Seed Money (Common Stock)</legend>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="equityPar">Par Value per Share</label>
+                                <input type="number" id="equityPar" step="0.001" min="0" placeholder="0.001">
+                            </div>
+                            <div class="form-group">
+                                <label for="equityShares">Number of Shares</label>
+                                <input type="number" id="equityShares" min="0" placeholder="0">
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label for="equityShares">Number of Shares</label>
-                            <input type="number" id="equityShares" min="0" placeholder="0">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="seedExpectedDate">Expected Date</label>
+                                <input type="date" id="seedExpectedDate">
+                            </div>
+                            <div class="form-group">
+                                <label for="seedReceivedDate">Date Received</label>
+                                <input type="date" id="seedReceivedDate">
+                            </div>
                         </div>
-                    </div>
+                    </fieldset>
+                    <fieldset class="equity-fieldset">
+                        <legend>Additional Paid-In Capital</legend>
+                        <div class="form-group">
+                            <label for="equityApic">APIC Amount</label>
+                            <input type="number" id="equityApic" step="0.01" min="0" placeholder="0.00">
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="apicExpectedDate">Expected Date</label>
+                                <input type="date" id="apicExpectedDate">
+                            </div>
+                            <div class="form-group">
+                                <label for="apicReceivedDate">Date Received</label>
+                                <input type="date" id="apicReceivedDate">
+                            </div>
+                        </div>
+                    </fieldset>
                     <div class="form-group">
-                        <label for="equityApic">Additional Paid-In Capital</label>
-                        <input type="number" id="equityApic" step="0.01" min="0" placeholder="0.00">
-                    </div>
-                    <div class="equity-investors-section">
-                        <div class="equity-investors-header">
-                            <h4>Investors</h4>
-                            <button type="button" id="addInvestorBtn" class="btn btn-primary btn-small">+ Investor</button>
-                        </div>
-                        <div id="investorsList" class="investors-list"></div>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="equityAutoTransaction" checked>
+                            Auto-create journal entries when received
+                        </label>
                     </div>
                     <div class="form-actions">
                         <button type="button" id="cancelEquityBtn" class="btn btn-secondary">Cancel</button>
                         <button type="submit" id="saveEquityBtn" class="btn btn-primary">Save</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- Investor Modal -->
-        <div id="investorModal" class="modal">
-            <div class="modal-content">
-                <h3 id="investorModalTitle">Add Investor</h3>
-                <form id="investorForm">
-                    <input type="hidden" id="editingInvestorId" value="">
-                    <div class="form-group">
-                        <label for="investorName">Investor Name</label>
-                        <input type="text" id="investorName" required placeholder="e.g., John Doe">
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="investorShares">Shares</label>
-                            <input type="number" id="investorShares" min="0" placeholder="1000" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="investorPrice">Price per Share</label>
-                            <input type="number" id="investorPrice" step="0.001" min="0" placeholder="0.001" required>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="investorDate">Investment Date</label>
-                        <input type="date" id="investorDate" required>
-                    </div>
-                    <div class="form-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="investorAutoTransaction" checked>
-                            Auto-create investment transaction
-                        </label>
-                    </div>
-                    <div class="form-actions">
-                        <button type="button" id="cancelInvestorBtn" class="btn btn-secondary">Cancel</button>
-                        <button type="submit" id="saveInvestorBtn" class="btn btn-primary">Add Investor</button>
                     </div>
                 </form>
             </div>

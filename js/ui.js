@@ -1130,13 +1130,6 @@ const UI = {
         html += '<tr class="bs-section-header"><td colspan="2">Stockholders\' Equity</td></tr>';
         html += `<tr class="bs-indent"><td>Common Stock</td><td>${fmtAmt(data.commonStock)}</td></tr>`;
         html += `<tr class="bs-indent"><td>Additional Paid-In Capital</td><td>${fmtAmt(data.apic)}</td></tr>`;
-        if (data.investorDetails && data.investorDetails.length > 0) {
-            html += '<tr class="bs-indent" style="font-style:italic;color:var(--color-text-muted);"><td colspan="2">Investors:</td></tr>';
-            data.investorDetails.forEach(inv => {
-                const invTotal = inv.shares * inv.price_per_share;
-                html += `<tr class="bs-indent" style="padding-left:32px;"><td style="padding-left:24px;">${Utils.escapeHtml(inv.name)} (${inv.shares.toLocaleString()} shares)</td><td>${fmtAmt(invTotal)}</td></tr>`;
-            });
-        }
         html += `<tr class="bs-indent"><td>Retained Earnings</td><td>${fmtAmt(data.retainedEarnings)}</td></tr>`;
         html += `<tr class="bs-subtotal"><td>Total Stockholders' Equity</td><td>${fmtAmt(data.totalEquity)}</td></tr>`;
 
@@ -1254,6 +1247,75 @@ const UI = {
         }
 
         detailPanel.innerHTML = html;
+    },
+
+    /**
+     * Render the equity section in the Assets & Equity tab
+     * @param {Object} equityConfig - Equity configuration
+     */
+    renderEquitySection(equityConfig) {
+        const fmtAmt = (amt) => Utils.formatCurrency(amt);
+        const round2 = (v) => Math.round(v * 100) / 100;
+
+        const commonStock = round2(equityConfig.common_stock_par * equityConfig.common_stock_shares);
+        const apicVal = round2(equityConfig.apic || 0);
+        const totalEquity = round2(commonStock + apicVal);
+
+        const panel = document.getElementById('equityDisplayPanel');
+
+        if (totalEquity === 0 && !equityConfig.common_stock_shares) {
+            panel.innerHTML = '<p class="empty-state">No equity configured. Click "Edit Equity" to set up seed money and APIC.</p>';
+            return;
+        }
+
+        const seedStatus = this._equityStatusBadge(equityConfig.seed_expected_date, equityConfig.seed_received_date);
+        const apicStatus = this._equityStatusBadge(equityConfig.apic_expected_date, equityConfig.apic_received_date);
+
+        let html = '<table class="equity-display-table"><thead><tr>';
+        html += '<th>Item</th><th>Amount</th><th>Expected</th><th>Received</th><th>Status</th>';
+        html += '</tr></thead><tbody>';
+
+        html += `<tr>
+            <td>Seed Money (Common Stock)</td>
+            <td>${fmtAmt(commonStock)}</td>
+            <td>${equityConfig.seed_expected_date ? Utils.formatDate(equityConfig.seed_expected_date) : '—'}</td>
+            <td>${equityConfig.seed_received_date ? Utils.formatDate(equityConfig.seed_received_date) : '—'}</td>
+            <td>${seedStatus}</td>
+        </tr>`;
+
+        if (apicVal > 0) {
+            html += `<tr>
+                <td>Additional Paid-In Capital</td>
+                <td>${fmtAmt(apicVal)}</td>
+                <td>${equityConfig.apic_expected_date ? Utils.formatDate(equityConfig.apic_expected_date) : '—'}</td>
+                <td>${equityConfig.apic_received_date ? Utils.formatDate(equityConfig.apic_received_date) : '—'}</td>
+                <td>${apicStatus}</td>
+            </tr>`;
+        }
+
+        html += `<tr class="equity-total-row">
+            <td><strong>Total Stockholders' Equity</strong></td>
+            <td><strong>${fmtAmt(totalEquity)}</strong></td>
+            <td colspan="3"></td>
+        </tr>`;
+
+        html += '</tbody></table>';
+
+        // Detail line
+        if (equityConfig.common_stock_shares) {
+            html += `<div class="equity-detail-line">${equityConfig.common_stock_shares.toLocaleString()} shares at ${fmtAmt(equityConfig.common_stock_par)} par value</div>`;
+        }
+
+        panel.innerHTML = html;
+    },
+
+    _equityStatusBadge(expectedDate, receivedDate) {
+        if (receivedDate) {
+            return '<span class="status-received">Received</span>';
+        } else if (expectedDate) {
+            return '<span class="status-pending">Pending</span>';
+        }
+        return '<span class="status-none">—</span>';
     },
 
     /**
