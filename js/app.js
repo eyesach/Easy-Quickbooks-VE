@@ -6,6 +6,7 @@ const App = {
     deleteTargetId: null,
     deleteCategoryTargetId: null,
     deleteFolderTargetId: null,
+    deleteAssetTargetId: null,
     folderCreatedFromCategory: false,
     pendingFileLoad: null,
     savedFileHandle: null,
@@ -76,6 +77,16 @@ const App = {
         const pnlTab = document.getElementById('pnlTab');
         if (pnlTab && pnlTab.style.display !== 'none') {
             this.refreshPnL();
+        }
+        // Refresh Balance Sheet tab if visible
+        const bsTab = document.getElementById('balancesheetTab');
+        if (bsTab && bsTab.style.display !== 'none') {
+            this.refreshBalanceSheet();
+        }
+        // Refresh Loan tab if visible
+        const loanTab = document.getElementById('loanTab');
+        if (loanTab && loanTab.style.display !== 'none') {
+            this.refreshLoan();
         }
     },
 
@@ -264,22 +275,26 @@ const App = {
             btn.classList.toggle('active', btn.dataset.tab === tab);
         });
 
-        const journalTab = document.getElementById('journalTab');
-        const cashflowTab = document.getElementById('cashflowTab');
-        const pnlTab = document.getElementById('pnlTab');
-
-        journalTab.style.display = 'none';
-        cashflowTab.style.display = 'none';
-        pnlTab.style.display = 'none';
+        const tabs = ['journalTab', 'cashflowTab', 'pnlTab', 'balancesheetTab', 'loanTab'];
+        tabs.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
 
         if (tab === 'cashflow') {
-            cashflowTab.style.display = 'block';
+            document.getElementById('cashflowTab').style.display = 'block';
             this.refreshCashFlow();
         } else if (tab === 'pnl') {
-            pnlTab.style.display = 'block';
+            document.getElementById('pnlTab').style.display = 'block';
             this.refreshPnL();
+        } else if (tab === 'balancesheet') {
+            document.getElementById('balancesheetTab').style.display = 'block';
+            this.refreshBalanceSheet();
+        } else if (tab === 'loan') {
+            document.getElementById('loanTab').style.display = 'block';
+            this.refreshLoan();
         } else {
-            journalTab.style.display = 'block';
+            document.getElementById('journalTab').style.display = 'block';
         }
     },
 
@@ -291,18 +306,14 @@ const App = {
     loadAndApplyTheme() {
         const preset = Database.getThemePreset();
         const customColors = Database.getThemeColors();
-        const isDark = Database.getThemeDark();
 
         // Sync UI controls
         const presetSelect = document.getElementById('themePreset');
         if (presetSelect) presetSelect.value = preset;
 
-        const darkBtn = document.getElementById('darkModeToggle');
-        if (darkBtn) darkBtn.textContent = isDark ? '\u263E' : '\u2600';
-
         // Show/hide custom picker
         const picker = document.getElementById('customColorPicker');
-        if (picker) picker.style.display = preset === 'custom' ? 'flex' : 'none';
+        if (picker) picker.style.display = preset === 'custom' ? 'grid' : 'none';
 
         // Sync color inputs if custom
         if (preset === 'custom' && customColors) {
@@ -312,7 +323,7 @@ const App = {
             });
         }
 
-        this.applyTheme(preset, customColors, isDark);
+        this.applyTheme(preset, customColors);
     },
 
     /**
@@ -321,7 +332,7 @@ const App = {
      * @param {Object|null} customColors - Custom color object {c1, c2, c3, c4}
      * @param {boolean} isDark - Dark mode enabled
      */
-    applyTheme(preset, customColors, isDark) {
+    applyTheme(preset, customColors) {
         const colors = preset === 'custom' && customColors
             ? customColors
             : (this.themePresets[preset] || this.themePresets.default);
@@ -338,39 +349,10 @@ const App = {
         root.style.setProperty('--color-accent-bg', colors.c2);
         root.style.setProperty('--color-accent-bg-hover', Utils.adjustLightness(colors.c2, -5));
 
-        if (isDark) {
-            // Dark mode overrides
-            root.setAttribute('data-theme', 'dark');
-            root.style.setProperty('--color-bg', '#1a1a2e');
-            root.style.setProperty('--color-bg-dark', '#141425');
-            root.style.setProperty('--color-white', '#1e1e30');
-            root.style.setProperty('--color-text', '#e0e0e0');
-            root.style.setProperty('--color-text-muted', '#a0a0b0');
-            root.style.setProperty('--color-border', '#2a2a4a');
-            root.style.setProperty('--shadow-sm', '0 1px 3px rgba(0,0,0,0.3)');
-            root.style.setProperty('--shadow-md', '0 4px 6px rgba(0,0,0,0.4)');
-            // Lighten primary slightly for dark bg contrast
-            const primaryHSL = Utils.hexToHSL(colors.c1);
-            if (primaryHSL.l < 50) {
-                root.style.setProperty('--color-primary', Utils.adjustLightness(colors.c1, 15));
-                root.style.setProperty('--color-primary-hover', Utils.adjustLightness(colors.c1, 5));
-                root.style.setProperty('--color-primary-rgb', Utils.hexToRGBString(Utils.adjustLightness(colors.c1, 15)));
-            }
-            // Darken accent for dark mode
-            root.style.setProperty('--color-accent-bg', Utils.adjustLightness(colors.c2, -60));
-            root.style.setProperty('--color-accent-bg-hover', Utils.adjustLightness(colors.c2, -55));
-        } else {
-            // Light mode
-            root.setAttribute('data-theme', 'light');
-            root.style.setProperty('--color-bg', colors.c3);
-            root.style.setProperty('--color-bg-dark', Utils.adjustLightness(colors.c3, -3));
-            root.style.setProperty('--color-white', colors.c4);
-            root.style.setProperty('--color-text', '#212529');
-            root.style.setProperty('--color-text-muted', '#6c757d');
-            root.style.setProperty('--color-border', '#dee2e6');
-            root.style.setProperty('--shadow-sm', '0 1px 3px rgba(0,0,0,0.08)');
-            root.style.setProperty('--shadow-md', '0 4px 6px rgba(0,0,0,0.1)');
-        }
+        // Background and surface
+        root.style.setProperty('--color-bg', colors.c3);
+        root.style.setProperty('--color-bg-dark', Utils.adjustLightness(colors.c3, -3));
+        root.style.setProperty('--color-white', colors.c4);
     },
 
     /**
@@ -787,7 +769,22 @@ const App = {
             this.refreshPnL();
         });
 
-        // ==================== THEME CONTROLS ====================
+        // ==================== GEAR ICON / THEME CONTROLS ====================
+
+        // Gear icon toggle popover
+        document.getElementById('gearBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const popover = document.getElementById('gearPopover');
+            popover.style.display = popover.style.display === 'none' ? 'block' : 'none';
+        });
+
+        // Close popover on outside click
+        document.addEventListener('click', (e) => {
+            const popover = document.getElementById('gearPopover');
+            if (popover.style.display !== 'none' && !e.target.closest('.gear-wrapper')) {
+                popover.style.display = 'none';
+            }
+        });
 
         // Theme preset dropdown
         document.getElementById('themePreset').addEventListener('change', (e) => {
@@ -796,8 +793,7 @@ const App = {
 
             const picker = document.getElementById('customColorPicker');
             if (preset === 'custom') {
-                picker.style.display = 'flex';
-                // Initialize custom colors from current preset or saved
+                picker.style.display = 'grid';
                 let colors = Database.getThemeColors();
                 if (!colors) {
                     colors = this.themePresets.default;
@@ -807,21 +803,11 @@ const App = {
                     const input = document.getElementById(id);
                     if (input) input.value = colors[`c${i + 1}`] || '#000000';
                 });
-                this.applyTheme('custom', colors, Database.getThemeDark());
+                this.applyTheme('custom', colors);
             } else {
                 picker.style.display = 'none';
-                this.applyTheme(preset, null, Database.getThemeDark());
+                this.applyTheme(preset, null);
             }
-        });
-
-        // Dark mode toggle
-        document.getElementById('darkModeToggle').addEventListener('click', () => {
-            const isDark = !Database.getThemeDark();
-            Database.setThemeDark(isDark);
-            document.getElementById('darkModeToggle').textContent = isDark ? '\u263E' : '\u2600';
-            const preset = Database.getThemePreset();
-            const customColors = Database.getThemeColors();
-            this.applyTheme(preset, customColors, isDark);
         });
 
         // Custom color picker inputs
@@ -834,7 +820,7 @@ const App = {
                     c4: document.getElementById('themeC4').value,
                 };
                 Database.setThemeColors(colors);
-                this.applyTheme('custom', colors, Database.getThemeDark());
+                this.applyTheme('custom', colors);
             }, 100));
         });
 
@@ -875,6 +861,59 @@ const App = {
         document.getElementById('exportCsvBtn').addEventListener('click', () => {
             this.handleExportCsv();
         });
+
+        // ==================== BALANCE SHEET ====================
+
+        // Initialize BS date dropdowns
+        this.initBalanceSheetDate();
+
+        // BS month/year change
+        document.getElementById('bsMonthMonth').addEventListener('change', () => this.refreshBalanceSheet());
+        document.getElementById('bsMonthYear').addEventListener('change', () => this.refreshBalanceSheet());
+
+        // Add fixed asset button
+        document.getElementById('addFixedAssetBtn').addEventListener('click', () => this.openFixedAssetModal());
+
+        // Fixed asset form
+        document.getElementById('fixedAssetForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleSaveFixedAsset();
+        });
+
+        document.getElementById('cancelAssetBtn').addEventListener('click', () => UI.hideModal('fixedAssetModal'));
+
+        // Delete asset
+        document.getElementById('confirmDeleteAssetBtn').addEventListener('click', () => this.confirmDeleteFixedAsset());
+        document.getElementById('cancelDeleteAssetBtn').addEventListener('click', () => {
+            UI.hideModal('deleteAssetModal');
+            this.deleteAssetTargetId = null;
+        });
+
+        // Balance sheet content click delegation (edit/delete asset buttons)
+        document.getElementById('balanceSheetContent').addEventListener('click', (e) => {
+            const editBtn = e.target.closest('.edit-asset-btn');
+            const deleteBtn = e.target.closest('.delete-asset-btn');
+            if (editBtn) this.handleEditFixedAsset(parseInt(editBtn.dataset.id));
+            if (deleteBtn) this.handleDeleteFixedAsset(parseInt(deleteBtn.dataset.id));
+        });
+
+        // Equity config
+        document.getElementById('editEquityBtn').addEventListener('click', () => this.openEquityModal());
+        document.getElementById('equityForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleSaveEquity();
+        });
+        document.getElementById('cancelEquityBtn').addEventListener('click', () => UI.hideModal('equityModal'));
+
+        // ==================== LOAN ====================
+
+        document.getElementById('editLoanBtn').addEventListener('click', () => this.openLoanConfigModal());
+        document.getElementById('loanConfigForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleSaveLoanConfig();
+        });
+        document.getElementById('cancelLoanConfigBtn').addEventListener('click', () => UI.hideModal('loanConfigModal'));
+        document.getElementById('clearLoanBtn').addEventListener('click', () => this.handleClearLoan());
 
         // ==================== MODALS & KEYBOARD ====================
 
@@ -982,6 +1021,7 @@ const App = {
         document.getElementById('categoryShowOnPl').checked = false;
         document.getElementById('categoryCogs').checked = false;
         document.getElementById('categoryDepreciation').checked = false;
+        document.getElementById('categorySalesTax').checked = false;
     },
 
     /**
@@ -1002,6 +1042,7 @@ const App = {
         const showOnPl = document.getElementById('categoryShowOnPl').checked;
         const isCogs = document.getElementById('categoryCogs').checked;
         const isDepreciation = document.getElementById('categoryDepreciation').checked;
+        const isSalesTax = document.getElementById('categorySalesTax').checked;
 
         if (!name) {
             UI.showNotification('Please enter a category name', 'error');
@@ -1011,11 +1052,11 @@ const App = {
         try {
             if (editingId) {
                 // Update existing category
-                Database.updateCategory(parseInt(editingId), name, isMonthly, defaultAmount, defaultType, folderId, showOnPl, isCogs, isDepreciation);
+                Database.updateCategory(parseInt(editingId), name, isMonthly, defaultAmount, defaultType, folderId, showOnPl, isCogs, isDepreciation, isSalesTax);
                 UI.showNotification('Category updated successfully', 'success');
             } else {
                 // Add new category
-                const newId = Database.addCategory(name, isMonthly, defaultAmount, defaultType, folderId, showOnPl, isCogs, isDepreciation);
+                const newId = Database.addCategory(name, isMonthly, defaultAmount, defaultType, folderId, showOnPl, isCogs, isDepreciation, isSalesTax);
                 // Select the new category in the dropdown
                 this.refreshCategories();
                 document.getElementById('category').value = newId;
@@ -1079,6 +1120,7 @@ const App = {
         document.getElementById('categoryShowOnPl').checked = !!category.show_on_pl;
         document.getElementById('categoryCogs').checked = !!category.is_cogs;
         document.getElementById('categoryDepreciation').checked = !!category.is_depreciation;
+        document.getElementById('categorySalesTax').checked = !!category.is_sales_tax;
 
         document.getElementById('categoryModalTitle').textContent = 'Edit Category';
         document.getElementById('saveCategoryBtn').textContent = 'Save Changes';
@@ -1647,6 +1689,325 @@ const App = {
             console.error('Error adding folder entries:', error);
             UI.showNotification('Failed to add entries', 'error');
         }
+    },
+
+    // ==================== BALANCE SHEET ====================
+
+    /**
+     * Refresh the Balance Sheet tab
+     */
+    refreshBalanceSheet() {
+        const month = document.getElementById('bsMonthMonth').value;
+        const year = document.getElementById('bsMonthYear').value;
+
+        if (!month || !year) {
+            document.getElementById('balanceSheetContent').innerHTML =
+                '<p class="empty-state">Select a date to view the Balance Sheet.</p>';
+            return;
+        }
+
+        const asOfMonth = `${year}-${month}`;
+        const taxMode = Database.getPLTaxMode();
+
+        // Gather all balance sheet data
+        const cash = Database.getCashAsOf(asOfMonth);
+        const ar = Database.getAccountsReceivableAsOf(asOfMonth);
+        const ap = Database.getAccountsPayableAsOf(asOfMonth);
+        const salesTaxPayable = Database.getSalesTaxPayableAsOf(asOfMonth);
+
+        // Fixed assets and depreciation
+        const fixedAssets = Database.getFixedAssets();
+        const asOfDate = `${year}-${month}-28`; // End of month approximation
+
+        let totalFixedAssetCost = 0;
+        let totalAccumDepr = 0;
+        const assetDetails = fixedAssets.map(asset => {
+            const purchaseDate = new Date(asset.purchase_date + 'T00:00:00');
+            const asOf = new Date(asOfDate + 'T00:00:00');
+            let monthsElapsed = (asOf.getFullYear() - purchaseDate.getFullYear()) * 12 + (asOf.getMonth() - purchaseDate.getMonth());
+            if (monthsElapsed < 0) monthsElapsed = 0;
+            if (monthsElapsed > asset.useful_life_months) monthsElapsed = asset.useful_life_months;
+
+            const monthlyDepr = asset.purchase_cost / asset.useful_life_months;
+            const accumDepr = monthlyDepr * monthsElapsed;
+
+            totalFixedAssetCost += asset.purchase_cost;
+            totalAccumDepr += accumDepr;
+
+            return {
+                ...asset,
+                accum_depreciation: accumDepr,
+                net_book_value: asset.purchase_cost - accumDepr
+            };
+        });
+
+        const netFixedAssets = totalFixedAssetCost - totalAccumDepr;
+        const totalAssets = cash + ar + netFixedAssets;
+
+        // Loan balance
+        const loanConfig = Database.getLoanConfig();
+        let loanBalance = 0;
+        if (loanConfig) {
+            const schedule = this.computeAmortizationSchedule(loanConfig);
+            // Find balance as of asOfMonth
+            const asOfMonthStr = asOfMonth;
+            for (let i = schedule.length - 1; i >= 0; i--) {
+                if (schedule[i].month <= asOfMonthStr) {
+                    loanBalance = schedule[i].ending_balance;
+                    break;
+                }
+            }
+            if (schedule.length > 0 && schedule[0].month > asOfMonthStr) {
+                loanBalance = loanConfig.principal;
+            }
+        }
+
+        const totalLiabilities = ap + salesTaxPayable + loanBalance;
+
+        // Equity
+        const equityConfig = Database.getEquityConfig();
+        const commonStock = equityConfig.common_stock_par * equityConfig.common_stock_shares;
+        const apic = equityConfig.apic || 0;
+        const retainedEarnings = Database.getRetainedEarningsAsOf(asOfMonth, taxMode);
+        const totalEquity = commonStock + apic + retainedEarnings;
+
+        const totalLiabilitiesAndEquity = totalLiabilities + totalEquity;
+        const isBalanced = Math.abs(totalAssets - totalLiabilitiesAndEquity) < 0.01;
+
+        const bsData = {
+            asOfMonth,
+            cash, ar,
+            assetDetails, totalFixedAssetCost, totalAccumDepr, netFixedAssets,
+            totalAssets,
+            ap, salesTaxPayable, loanBalance,
+            totalLiabilities,
+            commonStock, apic, retainedEarnings, totalEquity,
+            totalLiabilitiesAndEquity, isBalanced
+        };
+
+        UI.renderBalanceSheet(bsData);
+    },
+
+    /**
+     * Initialize Balance Sheet month/year dropdowns with current month
+     */
+    initBalanceSheetDate() {
+        const currentMonth = Utils.getCurrentMonth();
+        const [year, month] = currentMonth.split('-');
+        document.getElementById('bsMonthMonth').value = month;
+
+        // Populate year dropdown
+        const yearSelect = document.getElementById('bsMonthYear');
+        const years = Utils.generateYearOptions();
+        yearSelect.innerHTML = '<option value="">Year...</option>';
+        years.forEach(y => {
+            const opt = document.createElement('option');
+            opt.value = y;
+            opt.textContent = y;
+            yearSelect.appendChild(opt);
+        });
+        yearSelect.value = year;
+    },
+
+    // ==================== LOAN AMORTIZATION ====================
+
+    /**
+     * Compute a full amortization schedule from loan config
+     * @param {Object} config - { principal, annual_rate, term_years, payments_per_year, start_date }
+     * @returns {Array} Array of payment objects
+     */
+    computeAmortizationSchedule(config) {
+        const { principal, annual_rate, term_years, payments_per_year, start_date } = config;
+        const totalPayments = term_years * payments_per_year;
+        const periodicRate = (annual_rate / 100) / payments_per_year;
+
+        let payment;
+        if (periodicRate === 0) {
+            payment = principal / totalPayments;
+        } else {
+            payment = principal * (periodicRate * Math.pow(1 + periodicRate, totalPayments)) /
+                      (Math.pow(1 + periodicRate, totalPayments) - 1);
+        }
+
+        const schedule = [];
+        let balance = principal;
+        const startDate = new Date(start_date + 'T00:00:00');
+        const monthsBetween = 12 / payments_per_year;
+
+        for (let i = 1; i <= totalPayments; i++) {
+            const interest = balance * periodicRate;
+            const principalPart = payment - interest;
+            balance -= principalPart;
+            if (balance < 0.01) balance = 0;
+
+            // Calculate payment date
+            const paymentDate = new Date(startDate);
+            paymentDate.setMonth(paymentDate.getMonth() + Math.round(monthsBetween * i));
+            const month = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
+
+            schedule.push({
+                number: i,
+                month,
+                payment: payment,
+                principal: principalPart,
+                interest: interest,
+                ending_balance: balance
+            });
+        }
+
+        return schedule;
+    },
+
+    /**
+     * Refresh the Loan Amortization tab
+     */
+    refreshLoan() {
+        const config = Database.getLoanConfig();
+        if (!config) {
+            document.getElementById('loanContent').innerHTML =
+                '<p class="empty-state">No loan configured. Click "Configure Loan" to set up amortization.</p>';
+            return;
+        }
+
+        const schedule = this.computeAmortizationSchedule(config);
+        const totalInterest = schedule.reduce((sum, p) => sum + p.interest, 0);
+        const totalPaid = schedule.reduce((sum, p) => sum + p.payment, 0);
+
+        UI.renderLoanAmortization(config, schedule, totalInterest, totalPaid);
+    },
+
+    // ==================== FIXED ASSET HANDLERS ====================
+
+    openFixedAssetModal() {
+        document.getElementById('fixedAssetForm').reset();
+        document.getElementById('editingAssetId').value = '';
+        document.getElementById('fixedAssetModalTitle').textContent = 'Add Fixed Asset';
+        document.getElementById('saveAssetBtn').textContent = 'Add Asset';
+        document.getElementById('assetDate').value = Utils.getTodayDate();
+        UI.showModal('fixedAssetModal');
+        document.getElementById('assetName').focus();
+    },
+
+    handleSaveFixedAsset() {
+        const name = document.getElementById('assetName').value.trim();
+        const cost = parseFloat(document.getElementById('assetCost').value);
+        const life = parseInt(document.getElementById('assetLife').value);
+        const date = document.getElementById('assetDate').value;
+        const editingId = document.getElementById('editingAssetId').value;
+
+        if (!name || isNaN(cost) || isNaN(life) || !date) {
+            UI.showNotification('Please fill in all fields', 'error');
+            return;
+        }
+
+        try {
+            if (editingId) {
+                Database.updateFixedAsset(parseInt(editingId), name, cost, life, date);
+                UI.showNotification('Asset updated', 'success');
+            } else {
+                Database.addFixedAsset(name, cost, life, date);
+                UI.showNotification('Asset added', 'success');
+            }
+            UI.hideModal('fixedAssetModal');
+            this.refreshBalanceSheet();
+        } catch (error) {
+            console.error('Error saving asset:', error);
+            UI.showNotification('Failed to save asset', 'error');
+        }
+    },
+
+    handleEditFixedAsset(id) {
+        const asset = Database.getFixedAssetById(id);
+        if (!asset) return;
+
+        document.getElementById('editingAssetId').value = asset.id;
+        document.getElementById('assetName').value = asset.name;
+        document.getElementById('assetCost').value = asset.purchase_cost;
+        document.getElementById('assetLife').value = asset.useful_life_months;
+        document.getElementById('assetDate').value = asset.purchase_date;
+        document.getElementById('fixedAssetModalTitle').textContent = 'Edit Fixed Asset';
+        document.getElementById('saveAssetBtn').textContent = 'Save Changes';
+        UI.showModal('fixedAssetModal');
+    },
+
+    handleDeleteFixedAsset(id) {
+        this.deleteAssetTargetId = id;
+        UI.showModal('deleteAssetModal');
+    },
+
+    confirmDeleteFixedAsset() {
+        if (this.deleteAssetTargetId) {
+            Database.deleteFixedAsset(this.deleteAssetTargetId);
+            UI.showNotification('Asset deleted', 'success');
+            this.refreshBalanceSheet();
+        }
+        UI.hideModal('deleteAssetModal');
+        this.deleteAssetTargetId = null;
+    },
+
+    // ==================== EQUITY CONFIG HANDLERS ====================
+
+    openEquityModal() {
+        const config = Database.getEquityConfig();
+        document.getElementById('equityPar').value = config.common_stock_par || '';
+        document.getElementById('equityShares').value = config.common_stock_shares || '';
+        document.getElementById('equityApic').value = config.apic || '';
+        UI.showModal('equityModal');
+    },
+
+    handleSaveEquity() {
+        const par = parseFloat(document.getElementById('equityPar').value) || 0;
+        const shares = parseInt(document.getElementById('equityShares').value) || 0;
+        const apic = parseFloat(document.getElementById('equityApic').value) || 0;
+
+        Database.setEquityConfig({ common_stock_par: par, common_stock_shares: shares, apic: apic });
+        UI.hideModal('equityModal');
+        UI.showNotification('Equity config saved', 'success');
+        this.refreshBalanceSheet();
+    },
+
+    // ==================== LOAN CONFIG HANDLERS ====================
+
+    openLoanConfigModal() {
+        const config = Database.getLoanConfig();
+        if (config) {
+            document.getElementById('loanPrincipal').value = config.principal || '';
+            document.getElementById('loanRate').value = config.annual_rate || '';
+            document.getElementById('loanTerm').value = config.term_years || '';
+            document.getElementById('loanPayments').value = config.payments_per_year || '';
+            document.getElementById('loanStartDate').value = config.start_date || '';
+        } else {
+            document.getElementById('loanConfigForm').reset();
+        }
+        UI.showModal('loanConfigModal');
+    },
+
+    handleSaveLoanConfig() {
+        const principal = parseFloat(document.getElementById('loanPrincipal').value);
+        const rate = parseFloat(document.getElementById('loanRate').value);
+        const term = parseInt(document.getElementById('loanTerm').value);
+        const payments = parseInt(document.getElementById('loanPayments').value);
+        const startDate = document.getElementById('loanStartDate').value;
+
+        if (isNaN(principal) || isNaN(rate) || isNaN(term) || isNaN(payments) || !startDate) {
+            UI.showNotification('Please fill in all fields', 'error');
+            return;
+        }
+
+        Database.setLoanConfig({
+            principal, annual_rate: rate, term_years: term,
+            payments_per_year: payments, start_date: startDate
+        });
+        UI.hideModal('loanConfigModal');
+        UI.showNotification('Loan configured', 'success');
+        this.refreshLoan();
+    },
+
+    handleClearLoan() {
+        Database.setLoanConfig(null);
+        UI.hideModal('loanConfigModal');
+        UI.showNotification('Loan cleared', 'success');
+        this.refreshLoan();
     },
 
     // ==================== EXPORT ====================

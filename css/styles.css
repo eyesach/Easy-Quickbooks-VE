@@ -50,11 +50,14 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     background-color: var(--color-bg);
     color: var(--color-text);
     line-height: 1.6;
     min-height: 100vh;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* App Container */
@@ -1583,61 +1586,7 @@ body {
     }
 }
 
-/* Theme Controls */
-.theme-controls {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.theme-controls select {
-    padding: 6px 10px;
-    font-size: 0.8rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background-color: var(--color-white);
-    color: var(--color-text);
-    cursor: pointer;
-}
-
-.theme-controls select:focus {
-    outline: none;
-    border-color: var(--color-primary);
-}
-
-.custom-color-picker {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-}
-
-.custom-color-picker input[type="color"] {
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 2px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    background: none;
-    -webkit-appearance: none;
-    appearance: none;
-}
-
-.custom-color-picker input[type="color"]::-webkit-color-swatch-wrapper {
-    padding: 2px;
-}
-
-.custom-color-picker input[type="color"]::-webkit-color-swatch {
-    border: none;
-    border-radius: 2px;
-}
-
-#darkModeToggle {
-    font-size: 1rem;
-    line-height: 1;
-    padding: 4px 8px;
-    min-width: 32px;
-}
+/* (Theme controls moved to gear popover) */
 
 /* Notification classes */
 .notification {
@@ -1675,40 +1624,335 @@ body {
     color: var(--color-notification-info-text);
 }
 
-/* Dark mode adjustments */
-[data-theme="dark"] .cashflow-table th:first-child,
-[data-theme="dark"] .cashflow-table td:first-child {
+/* Gear Icon Popover */
+.gear-wrapper {
+    position: relative;
+}
+
+.gear-btn {
+    color: var(--color-text-muted);
+    transition: color 0.2s, transform 0.3s;
+}
+
+.gear-btn:hover {
+    color: var(--color-primary);
+    transform: rotate(30deg);
+}
+
+.gear-popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: var(--color-white);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    padding: 16px;
+    min-width: 220px;
+    z-index: 100;
+}
+
+.gear-popover-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.gear-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.gear-popover select {
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-white);
+    color: var(--color-text);
+    width: 100%;
+}
+
+.gear-popover .custom-color-picker {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border);
+}
+
+.color-swatch-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.color-swatch-group label {
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.color-swatch-group input[type="color"] {
+    width: 100%;
+    height: 28px;
+    padding: 0;
+    border: 2px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    background: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.color-swatch-group input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 2px;
+}
+
+.color-swatch-group input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: 2px;
+}
+
+/* Balance Sheet Styles */
+.bs-section {
+    background: var(--color-white);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+}
+
+.bs-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.bs-header h3 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.bs-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.bs-controls label {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+}
+
+.bs-controls select {
+    padding: 4px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
     background: var(--color-white);
 }
 
-[data-theme="dark"] .cashflow-subtotal td:first-child,
-[data-theme="dark"] .cashflow-subtotal td,
-[data-theme="dark"] .cashflow-total td:first-child,
-[data-theme="dark"] .cashflow-total td {
-    background: var(--color-bg-dark);
+.bs-content {
+    padding: 20px;
 }
 
-[data-theme="dark"] .pnl-table th:first-child,
-[data-theme="dark"] .pnl-table th {
+.bs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.bs-table td {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.bs-table td:last-child {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-family: 'DM Mono', monospace;
+}
+
+.bs-section-header td {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.5px;
+    color: var(--color-text);
+    padding-top: 16px;
+    background-color: var(--color-white);
+}
+
+.bs-subsection td {
+    font-weight: 600;
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding-top: 12px;
+}
+
+.bs-indent td:first-child {
+    padding-left: 32px;
+}
+
+.bs-subtotal td {
+    font-weight: 600;
     background-color: var(--color-bg);
+    border-top: 1px solid var(--color-border);
 }
 
-[data-theme="dark"] .pnl-subtotal td,
-[data-theme="dark"] .pnl-subtotal td:first-child {
-    background-color: var(--color-bg);
-}
-
-[data-theme="dark"] .pnl-total td,
-[data-theme="dark"] .pnl-total td:first-child {
+.bs-total td {
+    font-weight: 700;
     background-color: var(--color-bg-dark);
+    border-top: 2px solid var(--color-border);
+    font-size: 0.9rem;
 }
 
-[data-theme="dark"] .modal {
-    background-color: rgba(0, 0, 0, 0.7);
+.bs-validation {
+    margin-top: 16px;
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-align: center;
 }
 
-[data-theme="dark"] .late-payment-row {
-    background-color: rgba(255, 255, 255, 0.02);
+.bs-validation.balanced {
+    background-color: var(--color-status-paid-bg);
+    color: var(--color-status-paid-text);
+}
+
+.bs-validation.unbalanced {
+    background-color: var(--color-notification-error-bg);
+    color: var(--color-notification-error-text);
+}
+
+.bs-asset-actions {
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+}
+
+.bs-asset-actions .btn-icon {
+    opacity: 1;
+    padding: 2px;
+}
+
+/* Loan Amortization Styles */
+.loan-section {
+    background: var(--color-white);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+}
+
+.loan-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.loan-header h3 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.loan-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.loan-content {
+    padding: 20px;
+}
+
+.loan-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.loan-summary-item {
+    padding: 12px;
+    background-color: var(--color-bg);
+    border-radius: var(--radius-sm);
+}
+
+.loan-summary-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.loan-summary-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    font-family: 'DM Mono', monospace;
+}
+
+.loan-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+.loan-table th,
+.loan-table td {
+    padding: 8px 12px;
+    text-align: right;
+    border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.loan-table th {
+    background-color: var(--color-bg);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.5px;
+    color: var(--color-text-muted);
+    position: sticky;
+    top: 0;
+}
+
+.loan-table th:first-child,
+.loan-table td:first-child {
+    text-align: center;
+}
+
+.loan-table tbody tr:hover {
+    background-color: rgba(var(--color-primary-rgb), 0.04);
+}
+
+.loan-table-wrapper {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+/* Sales Tax badge */
+.category-badge.sales-tax {
+    background-color: #e0f2f1;
+    color: #00695c;
 }
 
 /* Scrollbar styling */

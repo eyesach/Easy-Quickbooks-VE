@@ -483,11 +483,14 @@ const UI = {
         const deprBadge = cat.is_depreciation
             ? '<span class="category-badge depr">Depr.</span>'
             : '';
+        const salesTaxBadge = cat.is_sales_tax
+            ? '<span class="category-badge sales-tax">Sales Tax</span>'
+            : '';
 
         return `
             <div class="category-item" data-id="${cat.id}">
                 <div class="category-info">
-                    <span class="category-name">${Utils.escapeHtml(cat.name)} ${monthlyBadge} ${defaultTypeBadge} ${defaultAmountBadge} ${plBadge} ${cogsBadge} ${deprBadge}</span>
+                    <span class="category-name">${Utils.escapeHtml(cat.name)} ${monthlyBadge} ${defaultTypeBadge} ${defaultAmountBadge} ${plBadge} ${cogsBadge} ${deprBadge} ${salesTaxBadge}</span>
                     <span class="category-meta">${usageCount} transaction${usageCount !== 1 ? 's' : ''}</span>
                 </div>
                 <div class="category-actions">
@@ -1021,6 +1024,150 @@ const UI = {
         html += `<td>${fmtAmt(cumulative)}</td></tr>`;
 
         html += '</tbody></table>';
+        container.innerHTML = html;
+    },
+
+    /**
+     * Render the Balance Sheet
+     * @param {Object} data - Balance sheet data from App.refreshBalanceSheet()
+     */
+    renderBalanceSheet(data) {
+        const container = document.getElementById('balanceSheetContent');
+        const fmtAmt = (amt) => Utils.formatCurrency(amt);
+        const monthLabel = Utils.formatMonthDisplay(data.asOfMonth);
+
+        let html = `<div class="bs-date-label" style="font-size:0.8rem;color:var(--color-text-muted);margin-bottom:12px;">As of ${monthLabel}</div>`;
+
+        html += '<table class="bs-table"><tbody>';
+
+        // ===== ASSETS =====
+        html += '<tr class="bs-section-header"><td colspan="2">Assets</td></tr>';
+
+        // Current Assets
+        html += '<tr class="bs-subsection"><td colspan="2">Current Assets</td></tr>';
+        html += `<tr class="bs-indent"><td>Cash</td><td>${fmtAmt(data.cash)}</td></tr>`;
+        html += `<tr class="bs-indent"><td>Accounts Receivable</td><td>${fmtAmt(data.ar)}</td></tr>`;
+
+        const totalCurrentAssets = data.cash + data.ar;
+        html += `<tr class="bs-subtotal"><td>Total Current Assets</td><td>${fmtAmt(totalCurrentAssets)}</td></tr>`;
+
+        // Fixed Assets
+        html += '<tr class="bs-subsection"><td colspan="2">Fixed Assets</td></tr>';
+        if (data.assetDetails.length === 0) {
+            html += '<tr class="bs-indent"><td style="color:var(--color-text-muted);font-style:italic;">No fixed assets</td><td></td></tr>';
+        } else {
+            data.assetDetails.forEach(asset => {
+                html += `<tr class="bs-indent"><td>
+                    ${Utils.escapeHtml(asset.name)}
+                    <span class="bs-asset-actions">
+                        <button class="btn-icon edit-asset-btn" data-id="${asset.id}" title="Edit">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                        </button>
+                        <button class="btn-icon delete-asset-btn" data-id="${asset.id}" title="Delete">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                        </button>
+                    </span>
+                </td><td>${fmtAmt(asset.purchase_cost)}</td></tr>`;
+            });
+        }
+
+        html += `<tr class="bs-indent"><td>Total Fixed Assets (Cost)</td><td>${fmtAmt(data.totalFixedAssetCost)}</td></tr>`;
+        html += `<tr class="bs-indent"><td>Less: Accumulated Depreciation</td><td>(${fmtAmt(data.totalAccumDepr)})</td></tr>`;
+        html += `<tr class="bs-subtotal"><td>Net Fixed Assets</td><td>${fmtAmt(data.netFixedAssets)}</td></tr>`;
+
+        // Total Assets
+        html += `<tr class="bs-total"><td>Total Assets</td><td>${fmtAmt(data.totalAssets)}</td></tr>`;
+
+        // Spacer
+        html += '<tr><td colspan="2" style="padding:8px;"></td></tr>';
+
+        // ===== LIABILITIES =====
+        html += '<tr class="bs-section-header"><td colspan="2">Liabilities</td></tr>';
+
+        // Current Liabilities
+        html += '<tr class="bs-subsection"><td colspan="2">Current Liabilities</td></tr>';
+        html += `<tr class="bs-indent"><td>Accounts Payable</td><td>${fmtAmt(data.ap)}</td></tr>`;
+        html += `<tr class="bs-indent"><td>Sales Tax Payable</td><td>${fmtAmt(data.salesTaxPayable)}</td></tr>`;
+
+        const totalCurrentLiabilities = data.ap + data.salesTaxPayable;
+        html += `<tr class="bs-subtotal"><td>Total Current Liabilities</td><td>${fmtAmt(totalCurrentLiabilities)}</td></tr>`;
+
+        // Long-Term Liabilities
+        if (data.loanBalance > 0) {
+            html += '<tr class="bs-subsection"><td colspan="2">Long-Term Liabilities</td></tr>';
+            html += `<tr class="bs-indent"><td>Bank Loans Payable</td><td>${fmtAmt(data.loanBalance)}</td></tr>`;
+        }
+
+        html += `<tr class="bs-subtotal"><td>Total Liabilities</td><td>${fmtAmt(data.totalLiabilities)}</td></tr>`;
+
+        // Spacer
+        html += '<tr><td colspan="2" style="padding:4px;"></td></tr>';
+
+        // ===== STOCKHOLDERS' EQUITY =====
+        html += '<tr class="bs-section-header"><td colspan="2">Stockholders\' Equity</td></tr>';
+        html += `<tr class="bs-indent"><td>Common Stock</td><td>${fmtAmt(data.commonStock)}</td></tr>`;
+        html += `<tr class="bs-indent"><td>Additional Paid-In Capital</td><td>${fmtAmt(data.apic)}</td></tr>`;
+        html += `<tr class="bs-indent"><td>Retained Earnings</td><td>${fmtAmt(data.retainedEarnings)}</td></tr>`;
+        html += `<tr class="bs-subtotal"><td>Total Stockholders' Equity</td><td>${fmtAmt(data.totalEquity)}</td></tr>`;
+
+        // Total Liabilities + Equity
+        html += `<tr class="bs-total"><td>Total Liabilities + Equity</td><td>${fmtAmt(data.totalLiabilitiesAndEquity)}</td></tr>`;
+
+        html += '</tbody></table>';
+
+        // Validation
+        if (data.isBalanced) {
+            html += '<div class="bs-validation balanced">Balanced &mdash; Assets = Liabilities + Equity</div>';
+        } else {
+            const diff = data.totalAssets - data.totalLiabilitiesAndEquity;
+            html += `<div class="bs-validation unbalanced">Unbalanced &mdash; Difference: ${fmtAmt(Math.abs(diff))}</div>`;
+        }
+
+        container.innerHTML = html;
+    },
+
+    /**
+     * Render the Loan Amortization schedule
+     * @param {Object} config - Loan config
+     * @param {Array} schedule - Amortization schedule array
+     * @param {number} totalInterest - Total interest paid
+     * @param {number} totalPaid - Total amount paid
+     */
+    renderLoanAmortization(config, schedule, totalInterest, totalPaid) {
+        const container = document.getElementById('loanContent');
+        const fmtAmt = (amt) => Utils.formatCurrency(amt);
+
+        let html = '<div class="loan-summary">';
+        html += `<div class="loan-summary-item"><div class="loan-summary-label">Principal</div><div class="loan-summary-value">${fmtAmt(config.principal)}</div></div>`;
+        html += `<div class="loan-summary-item"><div class="loan-summary-label">Rate</div><div class="loan-summary-value">${config.annual_rate}%</div></div>`;
+        html += `<div class="loan-summary-item"><div class="loan-summary-label">Term</div><div class="loan-summary-value">${config.term_years} yr</div></div>`;
+        html += `<div class="loan-summary-item"><div class="loan-summary-label">Payment</div><div class="loan-summary-value">${fmtAmt(schedule[0]?.payment || 0)}</div></div>`;
+        html += `<div class="loan-summary-item"><div class="loan-summary-label">Total Interest</div><div class="loan-summary-value amount-payable">${fmtAmt(totalInterest)}</div></div>`;
+        html += `<div class="loan-summary-item"><div class="loan-summary-label">Total Paid</div><div class="loan-summary-value">${fmtAmt(totalPaid)}</div></div>`;
+        html += '</div>';
+
+        html += '<div class="loan-table-wrapper"><table class="loan-table"><thead><tr>';
+        html += '<th>#</th><th>Date</th><th>Payment</th><th>Principal</th><th>Interest</th><th>Balance</th>';
+        html += '</tr></thead><tbody>';
+
+        schedule.forEach(p => {
+            html += '<tr>';
+            html += `<td>${p.number}</td>`;
+            html += `<td>${Utils.formatMonthShort(p.month)}</td>`;
+            html += `<td>${fmtAmt(p.payment)}</td>`;
+            html += `<td>${fmtAmt(p.principal)}</td>`;
+            html += `<td class="amount-payable">${fmtAmt(p.interest)}</td>`;
+            html += `<td>${fmtAmt(p.ending_balance)}</td>`;
+            html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
         container.innerHTML = html;
     },
 

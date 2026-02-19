@@ -59,6 +59,7 @@ const Database = {
                 show_on_pl INTEGER DEFAULT 0,
                 is_cogs INTEGER DEFAULT 0,
                 is_depreciation INTEGER DEFAULT 0,
+                is_sales_tax INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (folder_id) REFERENCES category_folders(id)
             )
@@ -98,6 +99,17 @@ const Database = {
             CREATE TABLE IF NOT EXISTS app_meta (
                 key TEXT PRIMARY KEY,
                 value TEXT
+            )
+        `);
+
+        this.db.run(`
+            CREATE TABLE IF NOT EXISTS balance_sheet_assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                purchase_cost DECIMAL(10,2) NOT NULL,
+                useful_life_months INTEGER NOT NULL,
+                purchase_date DATE NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         `);
 
@@ -225,6 +237,25 @@ const Database = {
             )
         `);
 
+        // Add is_sales_tax flag to categories
+        try {
+            this.db.exec('SELECT is_sales_tax FROM categories LIMIT 1');
+        } catch (e) {
+            this.db.run('ALTER TABLE categories ADD COLUMN is_sales_tax INTEGER DEFAULT 0');
+        }
+
+        // Create balance_sheet_assets table
+        this.db.run(`
+            CREATE TABLE IF NOT EXISTS balance_sheet_assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                purchase_cost DECIMAL(10,2) NOT NULL,
+                useful_life_months INTEGER NOT NULL,
+                purchase_date DATE NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
         // One-time migration: reset show_on_pl flags (semantics inverted from "show" to "hide")
         const migrated = this.db.exec("SELECT value FROM app_meta WHERE key = 'pl_hide_migration'");
         if (migrated.length === 0 || migrated[0].values.length === 0) {
@@ -316,10 +347,10 @@ const Database = {
      * @param {number|null} folderId - Folder ID
      * @returns {number} New category ID
      */
-    addCategory(name, isMonthly = false, defaultAmount = null, defaultType = null, folderId = null, showOnPl = false, isCogs = false, isDepreciation = false) {
+    addCategory(name, isMonthly = false, defaultAmount = null, defaultType = null, folderId = null, showOnPl = false, isCogs = false, isDepreciation = false, isSalesTax = false) {
         this.db.run(
-            'INSERT INTO categories (name, is_monthly, default_amount, default_type, folder_id, show_on_pl, is_cogs, is_depreciation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [name.trim(), isMonthly ? 1 : 0, defaultAmount, defaultType, folderId, showOnPl ? 1 : 0, isCogs ? 1 : 0, isDepreciation ? 1 : 0]
+            'INSERT INTO categories (name, is_monthly, default_amount, default_type, folder_id, show_on_pl, is_cogs, is_depreciation, is_sales_tax) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [name.trim(), isMonthly ? 1 : 0, defaultAmount, defaultType, folderId, showOnPl ? 1 : 0, isCogs ? 1 : 0, isDepreciation ? 1 : 0, isSalesTax ? 1 : 0]
         );
         const result = this.db.exec('SELECT last_insert_rowid() as id');
         this.autoSave();
@@ -366,10 +397,10 @@ const Database = {
      * @param {string|null} defaultType - Default type
      * @param {number|null} folderId - Folder ID
      */
-    updateCategory(id, name, isMonthly = false, defaultAmount = null, defaultType = null, folderId = null, showOnPl = false, isCogs = false, isDepreciation = false) {
+    updateCategory(id, name, isMonthly = false, defaultAmount = null, defaultType = null, folderId = null, showOnPl = false, isCogs = false, isDepreciation = false, isSalesTax = false) {
         this.db.run(
-            'UPDATE categories SET name = ?, is_monthly = ?, default_amount = ?, default_type = ?, folder_id = ?, show_on_pl = ?, is_cogs = ?, is_depreciation = ? WHERE id = ?',
-            [name.trim(), isMonthly ? 1 : 0, defaultAmount, defaultType, folderId, showOnPl ? 1 : 0, isCogs ? 1 : 0, isDepreciation ? 1 : 0, id]
+            'UPDATE categories SET name = ?, is_monthly = ?, default_amount = ?, default_type = ?, folder_id = ?, show_on_pl = ?, is_cogs = ?, is_depreciation = ?, is_sales_tax = ? WHERE id = ?',
+            [name.trim(), isMonthly ? 1 : 0, defaultAmount, defaultType, folderId, showOnPl ? 1 : 0, isCogs ? 1 : 0, isDepreciation ? 1 : 0, isSalesTax ? 1 : 0, id]
         );
         this.autoSave();
     },
@@ -859,7 +890,7 @@ const Database = {
         `);
         const cogs = cogsResult.length > 0 ? this.rowsToObjects(cogsResult[0]) : [];
 
-        // OpEx: all payable categories that are not COGS, not depreciation, not hidden, accrual basis
+        // OpEx: all payable categories that are not COGS, not depreciation, not sales tax, not hidden, accrual basis
         const opexResult = this.db.exec(`
             SELECT c.id as category_id, c.name as category_name,
                    t.month_due as month,
@@ -870,6 +901,7 @@ const Database = {
             AND t.transaction_type = 'payable'
             AND c.is_cogs = 0
             AND c.is_depreciation = 0
+            AND c.is_sales_tax = 0
             AND c.show_on_pl != 1
             GROUP BY c.id, t.month_due
             ORDER BY c.cashflow_sort_order ASC, c.name ASC
@@ -971,6 +1003,342 @@ const Database = {
     setThemeDark(isDark) {
         this.db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('theme_dark', ?)", [isDark ? '1' : '0']);
         this.autoSave();
+    },
+
+    // ==================== FIXED ASSETS ====================
+
+    /**
+     * Get all fixed assets
+     * @returns {Array} Array of fixed asset objects
+     */
+    getFixedAssets() {
+        const results = this.db.exec('SELECT * FROM balance_sheet_assets ORDER BY purchase_date ASC, name ASC');
+        if (results.length === 0) return [];
+        return this.rowsToObjects(results[0]);
+    },
+
+    /**
+     * Add a fixed asset
+     * @param {string} name - Asset name
+     * @param {number} purchaseCost - Purchase cost
+     * @param {number} usefulLifeMonths - Useful life in months
+     * @param {string} purchaseDate - Purchase date (YYYY-MM-DD)
+     * @returns {number} New asset ID
+     */
+    addFixedAsset(name, purchaseCost, usefulLifeMonths, purchaseDate) {
+        this.db.run(
+            'INSERT INTO balance_sheet_assets (name, purchase_cost, useful_life_months, purchase_date) VALUES (?, ?, ?, ?)',
+            [name.trim(), purchaseCost, usefulLifeMonths, purchaseDate]
+        );
+        const result = this.db.exec('SELECT last_insert_rowid() as id');
+        this.autoSave();
+        return result[0].values[0][0];
+    },
+
+    /**
+     * Update a fixed asset
+     * @param {number} id - Asset ID
+     * @param {string} name - Asset name
+     * @param {number} purchaseCost - Purchase cost
+     * @param {number} usefulLifeMonths - Useful life in months
+     * @param {string} purchaseDate - Purchase date (YYYY-MM-DD)
+     */
+    updateFixedAsset(id, name, purchaseCost, usefulLifeMonths, purchaseDate) {
+        this.db.run(
+            'UPDATE balance_sheet_assets SET name = ?, purchase_cost = ?, useful_life_months = ?, purchase_date = ? WHERE id = ?',
+            [name.trim(), purchaseCost, usefulLifeMonths, purchaseDate, id]
+        );
+        this.autoSave();
+    },
+
+    /**
+     * Delete a fixed asset
+     * @param {number} id - Asset ID
+     */
+    deleteFixedAsset(id) {
+        this.db.run('DELETE FROM balance_sheet_assets WHERE id = ?', [id]);
+        this.autoSave();
+    },
+
+    /**
+     * Get a fixed asset by ID
+     * @param {number} id - Asset ID
+     * @returns {Object|null} Asset object
+     */
+    getFixedAssetById(id) {
+        const results = this.db.exec('SELECT * FROM balance_sheet_assets WHERE id = ?', [id]);
+        if (results.length === 0) return null;
+        return this.rowsToObjects(results[0])[0];
+    },
+
+    // ==================== EQUITY & LOAN CONFIG ====================
+
+    /**
+     * Get equity config (common stock par, shares, APIC)
+     * @returns {Object} { common_stock_par: number, common_stock_shares: number, apic: number }
+     */
+    getEquityConfig() {
+        const result = this.db.exec("SELECT value FROM app_meta WHERE key = 'equity_config'");
+        if (result.length === 0 || result[0].values.length === 0) {
+            return { common_stock_par: 0, common_stock_shares: 0, apic: 0 };
+        }
+        try {
+            return JSON.parse(result[0].values[0][0]);
+        } catch (e) {
+            return { common_stock_par: 0, common_stock_shares: 0, apic: 0 };
+        }
+    },
+
+    /**
+     * Set equity config
+     * @param {Object} config - { common_stock_par, common_stock_shares, apic }
+     */
+    setEquityConfig(config) {
+        this.db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('equity_config', ?)", [JSON.stringify(config)]);
+        this.autoSave();
+    },
+
+    /**
+     * Get loan config (single loan)
+     * @returns {Object|null} { principal, annual_rate, term_years, payments_per_year, start_date } or null
+     */
+    getLoanConfig() {
+        const result = this.db.exec("SELECT value FROM app_meta WHERE key = 'loan_config'");
+        if (result.length === 0 || result[0].values.length === 0) return null;
+        try {
+            return JSON.parse(result[0].values[0][0]);
+        } catch (e) {
+            return null;
+        }
+    },
+
+    /**
+     * Set loan config
+     * @param {Object|null} config - Loan config object or null to clear
+     */
+    setLoanConfig(config) {
+        if (config === null) {
+            this.db.run("DELETE FROM app_meta WHERE key = 'loan_config'");
+        } else {
+            this.db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('loan_config', ?)", [JSON.stringify(config)]);
+        }
+        this.autoSave();
+    },
+
+    // ==================== BALANCE SHEET QUERIES ====================
+
+    /**
+     * Get cash balance as of a given month (sum of received - sum of paid where month_paid <= asOfMonth)
+     * @param {string} asOfMonth - Month in YYYY-MM format
+     * @returns {number} Cash balance
+     */
+    getCashAsOf(asOfMonth) {
+        const result = this.db.exec(`
+            SELECT
+                COALESCE(SUM(CASE WHEN transaction_type = 'receivable' AND status = 'received' THEN amount ELSE 0 END), 0)
+                - COALESCE(SUM(CASE WHEN transaction_type = 'payable' AND status = 'paid' THEN amount ELSE 0 END), 0) as cash
+            FROM transactions
+            WHERE month_paid IS NOT NULL AND month_paid <= ?
+        `, [asOfMonth]);
+        return result[0].values[0][0];
+    },
+
+    /**
+     * Get accounts receivable as of a given month
+     * (receivable transactions where month_due <= asOfMonth AND still unpaid as of that month)
+     * @param {string} asOfMonth - Month in YYYY-MM format
+     * @returns {number} AR balance
+     */
+    getAccountsReceivableAsOf(asOfMonth) {
+        const result = this.db.exec(`
+            SELECT COALESCE(SUM(amount), 0) as total
+            FROM transactions
+            WHERE transaction_type = 'receivable'
+            AND month_due IS NOT NULL
+            AND month_due <= ?
+            AND (status = 'pending' OR (status = 'received' AND month_paid > ?))
+        `, [asOfMonth, asOfMonth]);
+        return result[0].values[0][0];
+    },
+
+    /**
+     * Get accounts payable as of a given month (non-sales-tax categories)
+     * @param {string} asOfMonth - Month in YYYY-MM format
+     * @returns {number} AP balance
+     */
+    getAccountsPayableAsOf(asOfMonth) {
+        const result = this.db.exec(`
+            SELECT COALESCE(SUM(t.amount), 0) as total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE t.transaction_type = 'payable'
+            AND c.is_sales_tax = 0
+            AND t.month_due IS NOT NULL
+            AND t.month_due <= ?
+            AND (t.status = 'pending' OR (t.status = 'paid' AND t.month_paid > ?))
+        `, [asOfMonth, asOfMonth]);
+        return result[0].values[0][0];
+    },
+
+    /**
+     * Get sales tax payable as of a given month (only sales tax categories)
+     * @param {string} asOfMonth - Month in YYYY-MM format
+     * @returns {number} Sales tax payable balance
+     */
+    getSalesTaxPayableAsOf(asOfMonth) {
+        const result = this.db.exec(`
+            SELECT COALESCE(SUM(t.amount), 0) as total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE t.transaction_type = 'payable'
+            AND c.is_sales_tax = 1
+            AND t.month_due IS NOT NULL
+            AND t.month_due <= ?
+            AND (t.status = 'pending' OR (t.status = 'paid' AND t.month_paid > ?))
+        `, [asOfMonth, asOfMonth]);
+        return result[0].values[0][0];
+    },
+
+    /**
+     * Get retained earnings as of a given month (cumulative P&L net income through asOfMonth).
+     * This recomputes P&L with overrides to match what the P&L statement shows.
+     * @param {string} asOfMonth - Month in YYYY-MM format
+     * @param {string} taxMode - 'corporate' or 'passthrough'
+     * @returns {number} Retained earnings (cumulative net income after tax)
+     */
+    getRetainedEarningsAsOf(asOfMonth, taxMode) {
+        // Get all months up to and including asOfMonth
+        const monthsResult = this.db.exec(`
+            SELECT DISTINCT t.month_due as month FROM transactions t
+            WHERE t.month_due IS NOT NULL AND t.month_due <= ?
+            ORDER BY month ASC
+        `, [asOfMonth]);
+        const months = monthsResult.length > 0 ? monthsResult[0].values.map(r => r[0]) : [];
+
+        if (months.length === 0) return 0;
+
+        const overrides = this.getAllPLOverrides();
+
+        // Helper: get value with override
+        const getVal = (catId, month, computed) => {
+            const key = `${catId}-${month}`;
+            return (key in overrides) ? overrides[key] : computed;
+        };
+
+        // Revenue per category per month (accrual, pretax)
+        const revenueResult = this.db.exec(`
+            SELECT c.id as category_id, t.month_due as month,
+                   SUM(COALESCE(t.pretax_amount, t.amount)) as total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE t.month_due IS NOT NULL AND t.month_due <= ?
+            AND t.transaction_type = 'receivable'
+            AND c.is_cogs = 0 AND c.show_on_pl != 1
+            GROUP BY c.id, t.month_due
+        `, [asOfMonth]);
+        const revenue = revenueResult.length > 0 ? this.rowsToObjects(revenueResult[0]) : [];
+
+        // COGS
+        const cogsResult = this.db.exec(`
+            SELECT c.id as category_id, t.month_due as month, SUM(t.amount) as total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE t.month_due IS NOT NULL AND t.month_due <= ?
+            AND c.is_cogs = 1 AND c.show_on_pl != 1
+            GROUP BY c.id, t.month_due
+        `, [asOfMonth]);
+        const cogs = cogsResult.length > 0 ? this.rowsToObjects(cogsResult[0]) : [];
+
+        // OpEx (non-COGS, non-depreciation, non-sales-tax payables)
+        const opexResult = this.db.exec(`
+            SELECT c.id as category_id, t.month_due as month, SUM(t.amount) as total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE t.month_due IS NOT NULL AND t.month_due <= ?
+            AND t.transaction_type = 'payable'
+            AND c.is_cogs = 0 AND c.is_depreciation = 0 AND c.is_sales_tax = 0 AND c.show_on_pl != 1
+            GROUP BY c.id, t.month_due
+        `, [asOfMonth]);
+        const opex = opexResult.length > 0 ? this.rowsToObjects(opexResult[0]) : [];
+
+        // Depreciation categories (values from overrides only)
+        const deprResult = this.db.exec(`SELECT id as category_id FROM categories WHERE is_depreciation = 1`);
+        const deprCats = deprResult.length > 0 ? deprResult[0].values.map(r => r[0]) : [];
+
+        // Build lookup maps
+        const buildMap = (rows) => {
+            const map = {};
+            rows.forEach(r => {
+                const key = `${r.category_id}-${r.month}`;
+                map[key] = (map[key] || 0) + r.total;
+            });
+            return map;
+        };
+
+        const revMap = buildMap(revenue);
+        const cogsMap = buildMap(cogs);
+        const opexMap = buildMap(opex);
+
+        // Compute cumulative net income
+        let cumulative = 0;
+
+        // Get unique category IDs per section from transactions
+        const revCatIds = [...new Set(revenue.map(r => r.category_id))];
+        const cogsCatIds = [...new Set(cogs.map(r => r.category_id))];
+        const opexCatIds = [...new Set(opex.map(r => r.category_id))];
+
+        // Also include categories that have overrides but no transactions
+        // (override-only categories would otherwise be missed)
+        Object.keys(overrides).forEach(key => {
+            const [catIdStr] = key.split('-');
+            const catId = parseInt(catIdStr);
+            if (catId < 0) return; // skip tax override key (-1)
+            if (!revCatIds.includes(catId) && !cogsCatIds.includes(catId) &&
+                !opexCatIds.includes(catId) && !deprCats.includes(catId)) {
+                // Check if this category is an opex category (non-hidden, non-cogs, non-depr, non-sales-tax payable-eligible)
+                const catResult = this.db.exec(`
+                    SELECT id FROM categories
+                    WHERE id = ? AND is_cogs = 0 AND is_depreciation = 0 AND is_sales_tax = 0 AND show_on_pl != 1
+                `, [catId]);
+                if (catResult.length > 0 && catResult[0].values.length > 0) {
+                    opexCatIds.push(catId);
+                }
+            }
+        });
+
+        months.forEach(month => {
+            let monthRev = 0;
+            revCatIds.forEach(catId => {
+                monthRev += getVal(catId, month, revMap[`${catId}-${month}`] || 0);
+            });
+
+            let monthCogs = 0;
+            cogsCatIds.forEach(catId => {
+                monthCogs += getVal(catId, month, cogsMap[`${catId}-${month}`] || 0);
+            });
+
+            let monthOpex = 0;
+            opexCatIds.forEach(catId => {
+                monthOpex += getVal(catId, month, opexMap[`${catId}-${month}`] || 0);
+            });
+
+            // Depreciation from overrides
+            deprCats.forEach(catId => {
+                monthOpex += getVal(catId, month, 0);
+            });
+
+            const nibt = monthRev - monthCogs - monthOpex;
+
+            let tax = 0;
+            if (taxMode === 'corporate') {
+                const autoTax = nibt > 0 ? nibt * 0.21 : 0;
+                tax = getVal(-1, month, autoTax);
+            }
+
+            cumulative += nibt - tax;
+        });
+
+        return cumulative;
     },
 
     /**

@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Accounting Journal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -20,28 +23,50 @@
             <div class="header-actions">
                 <button id="newEntryBtn" class="btn btn-primary">+ New Entry</button>
                 <button id="addFolderEntriesBtn" class="btn btn-primary">+ Add Folder</button>
-                <button id="manageCategoriesBtn" class="btn btn-secondary">Manage Categories</button>
-                <div class="theme-controls">
-                    <select id="themePreset" title="Theme">
-                        <option value="default">Default</option>
-                        <option value="ocean">Ocean</option>
-                        <option value="forest">Forest</option>
-                        <option value="sunset">Sunset</option>
-                        <option value="midnight">Midnight</option>
-                        <option value="custom">Custom...</option>
-                    </select>
-                    <div id="customColorPicker" class="custom-color-picker" style="display:none;">
-                        <input type="color" id="themeC1" value="#4a90a4" title="Primary">
-                        <input type="color" id="themeC2" value="#e8f0f3" title="Accent">
-                        <input type="color" id="themeC3" value="#f8f9fa" title="Background">
-                        <input type="color" id="themeC4" value="#ffffff" title="Surface">
-                    </div>
-                    <button id="darkModeToggle" class="btn btn-small" title="Toggle dark mode">&#9728;</button>
-                </div>
+                <button id="manageCategoriesBtn" class="btn btn-secondary">Categories</button>
                 <button id="saveDbBtn" class="btn btn-secondary">Save</button>
-                <button id="saveAsDbBtn" class="btn btn-secondary">Save As...</button>
+                <button id="saveAsDbBtn" class="btn btn-secondary">Save As</button>
                 <button id="loadDbBtn" class="btn btn-secondary">Load</button>
                 <input type="file" id="loadDbInput" accept=".db" style="display: none;">
+                <div class="gear-wrapper">
+                    <button id="gearBtn" class="btn-icon always-visible gear-btn" title="Settings">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                        </svg>
+                    </button>
+                    <div id="gearPopover" class="gear-popover" style="display:none;">
+                        <div class="gear-popover-section">
+                            <label class="gear-label">Theme</label>
+                            <select id="themePreset" title="Theme">
+                                <option value="default">Default</option>
+                                <option value="ocean">Ocean</option>
+                                <option value="forest">Forest</option>
+                                <option value="sunset">Sunset</option>
+                                <option value="midnight">Midnight</option>
+                                <option value="custom">Custom...</option>
+                            </select>
+                        </div>
+                        <div id="customColorPicker" class="custom-color-picker" style="display:none;">
+                            <div class="color-swatch-group">
+                                <label>Primary</label>
+                                <input type="color" id="themeC1" value="#4a90a4" title="Primary">
+                            </div>
+                            <div class="color-swatch-group">
+                                <label>Accent</label>
+                                <input type="color" id="themeC2" value="#e8f0f3" title="Accent">
+                            </div>
+                            <div class="color-swatch-group">
+                                <label>Background</label>
+                                <input type="color" id="themeC3" value="#f8f9fa" title="Background">
+                            </div>
+                            <div class="color-swatch-group">
+                                <label>Surface</label>
+                                <input type="color" id="themeC4" value="#ffffff" title="Surface">
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </header>
 
@@ -65,8 +90,10 @@
         <!-- Main Tab Navigation -->
         <nav class="main-tabs">
             <button class="main-tab active" data-tab="journal">Journal</button>
-            <button class="main-tab" data-tab="cashflow">Cash Flow Summary</button>
-            <button class="main-tab" data-tab="pnl">Profit &amp; Loss</button>
+            <button class="main-tab" data-tab="cashflow">Cash Flow</button>
+            <button class="main-tab" data-tab="pnl">P&amp;L</button>
+            <button class="main-tab" data-tab="balancesheet">Balance Sheet</button>
+            <button class="main-tab" data-tab="loan">Loan</button>
         </nav>
 
         <!-- Journal Tab -->
@@ -289,6 +316,165 @@
             </section>
         </div>
 
+        <!-- Balance Sheet Tab -->
+        <div id="balancesheetTab" style="display: none;">
+            <section class="bs-section">
+                <div class="bs-header">
+                    <h3>Balance Sheet</h3>
+                    <div class="bs-controls">
+                        <label for="bsMonthMonth">As of:</label>
+                        <select id="bsMonthMonth">
+                            <option value="01">January</option>
+                            <option value="02">February</option>
+                            <option value="03">March</option>
+                            <option value="04">April</option>
+                            <option value="05">May</option>
+                            <option value="06">June</option>
+                            <option value="07">July</option>
+                            <option value="08">August</option>
+                            <option value="09">September</option>
+                            <option value="10">October</option>
+                            <option value="11">November</option>
+                            <option value="12">December</option>
+                        </select>
+                        <select id="bsMonthYear">
+                            <option value="">Year...</option>
+                        </select>
+                        <button id="addFixedAssetBtn" class="btn btn-secondary btn-small">+ Fixed Asset</button>
+                        <button id="editEquityBtn" class="btn btn-secondary btn-small">Equity Config</button>
+                    </div>
+                </div>
+                <div id="balanceSheetContent" class="bs-content">
+                    <p class="empty-state">Select a date to view the Balance Sheet.</p>
+                </div>
+            </section>
+        </div>
+
+        <!-- Loan Amortization Tab -->
+        <div id="loanTab" style="display: none;">
+            <section class="loan-section">
+                <div class="loan-header">
+                    <h3>Loan Amortization</h3>
+                    <div class="loan-controls">
+                        <button id="editLoanBtn" class="btn btn-secondary btn-small">Configure Loan</button>
+                    </div>
+                </div>
+                <div id="loanContent" class="loan-content">
+                    <p class="empty-state">No loan configured. Click "Configure Loan" to set up amortization.</p>
+                </div>
+            </section>
+        </div>
+
+        <!-- Fixed Asset Modal -->
+        <div id="fixedAssetModal" class="modal">
+            <div class="modal-content">
+                <h3 id="fixedAssetModalTitle">Add Fixed Asset</h3>
+                <form id="fixedAssetForm">
+                    <input type="hidden" id="editingAssetId" value="">
+                    <div class="form-group">
+                        <label for="assetName">Asset Name</label>
+                        <input type="text" id="assetName" required placeholder="e.g., Office Equipment">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="assetCost">Purchase Cost</label>
+                            <input type="number" id="assetCost" step="0.01" min="0" placeholder="0.00" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="assetLife">Useful Life (months)</label>
+                            <input type="number" id="assetLife" min="1" placeholder="60" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="assetDate">Purchase Date</label>
+                        <input type="date" id="assetDate" required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="cancelAssetBtn" class="btn btn-secondary">Cancel</button>
+                        <button type="submit" id="saveAssetBtn" class="btn btn-primary">Add Asset</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Delete Fixed Asset Confirmation -->
+        <div id="deleteAssetModal" class="modal">
+            <div class="modal-content">
+                <h3>Delete Asset</h3>
+                <p id="deleteAssetMessage">Are you sure you want to delete this asset?</p>
+                <div class="form-actions">
+                    <button type="button" id="cancelDeleteAssetBtn" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="confirmDeleteAssetBtn" class="btn btn-danger">Delete</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Equity Config Modal -->
+        <div id="equityModal" class="modal">
+            <div class="modal-content">
+                <h3>Stockholders' Equity Configuration</h3>
+                <form id="equityForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="equityPar">Par Value per Share</label>
+                            <input type="number" id="equityPar" step="0.01" min="0" placeholder="0.00">
+                        </div>
+                        <div class="form-group">
+                            <label for="equityShares">Number of Shares</label>
+                            <input type="number" id="equityShares" min="0" placeholder="0">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="equityApic">Additional Paid-In Capital</label>
+                        <input type="number" id="equityApic" step="0.01" min="0" placeholder="0.00">
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="cancelEquityBtn" class="btn btn-secondary">Cancel</button>
+                        <button type="submit" id="saveEquityBtn" class="btn btn-primary">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Loan Config Modal -->
+        <div id="loanConfigModal" class="modal">
+            <div class="modal-content">
+                <h3>Loan Configuration</h3>
+                <form id="loanConfigForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="loanPrincipal">Principal Amount</label>
+                            <input type="number" id="loanPrincipal" step="0.01" min="0" placeholder="0.00" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="loanRate">Annual Interest Rate (%)</label>
+                            <input type="number" id="loanRate" step="0.01" min="0" placeholder="5.00" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="loanTerm">Term (years)</label>
+                            <input type="number" id="loanTerm" min="1" placeholder="5" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="loanPayments">Payments per Year</label>
+                            <input type="number" id="loanPayments" min="1" max="365" placeholder="12" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="loanStartDate">Start Date</label>
+                        <input type="date" id="loanStartDate" required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="clearLoanBtn" class="btn btn-danger">Clear Loan</button>
+                        <div style="flex:1;"></div>
+                        <button type="button" id="cancelLoanConfigBtn" class="btn btn-secondary">Cancel</button>
+                        <button type="submit" id="saveLoanConfigBtn" class="btn btn-primary">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
         <!-- Category Modal (Add/Edit) -->
         <div id="categoryModal" class="modal">
             <div class="modal-content modal-category">
@@ -342,6 +528,10 @@
                         <label class="checkbox-label" style="padding-left: 24px;">
                             <input type="checkbox" id="categoryDepreciation">
                             <span>Depreciation</span>
+                        </label>
+                        <label class="checkbox-label" style="padding-left: 24px;">
+                            <input type="checkbox" id="categorySalesTax">
+                            <span>Sales Tax</span>
                         </label>
                     </div>
                     <div class="form-actions">
