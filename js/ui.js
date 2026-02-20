@@ -1424,16 +1424,18 @@ const UI = {
             return;
         }
 
+        const skippedPayments = Database.getSkippedPayments(selectedLoan.id);
         const schedule = Utils.computeAmortizationSchedule({
             principal: selectedLoan.principal,
             annual_rate: selectedLoan.annual_rate,
             term_months: selectedLoan.term_months,
             payments_per_year: selectedLoan.payments_per_year,
             start_date: selectedLoan.start_date
-        });
+        }, skippedPayments);
 
-        const totalInterest = schedule.reduce((sum, p) => sum + p.interest, 0);
-        const totalPaid = schedule.reduce((sum, p) => sum + p.payment, 0);
+        const totalInterest = schedule.filter(p => !p.skipped).reduce((sum, p) => sum + p.interest, 0);
+        const totalPaid = schedule.filter(p => !p.skipped).reduce((sum, p) => sum + p.payment, 0);
+        const skippedCount = schedule.filter(p => p.skipped).length;
         const termYears = (selectedLoan.term_months / 12).toFixed(1);
 
         let html = '<div class="loan-summary">';
@@ -1443,20 +1445,25 @@ const UI = {
         html += `<div class="loan-summary-item"><div class="loan-summary-label">Payment</div><div class="loan-summary-value">${fmtAmt(schedule[0]?.payment || 0)}</div></div>`;
         html += `<div class="loan-summary-item"><div class="loan-summary-label">Total Interest</div><div class="loan-summary-value amount-payable">${fmtAmt(totalInterest)}</div></div>`;
         html += `<div class="loan-summary-item"><div class="loan-summary-label">Total Paid</div><div class="loan-summary-value">${fmtAmt(totalPaid)}</div></div>`;
+        if (skippedCount > 0) {
+            html += `<div class="loan-summary-item"><div class="loan-summary-label">Skipped</div><div class="loan-summary-value amount-payable">${skippedCount}</div></div>`;
+        }
         html += '</div>';
 
         html += '<div class="loan-table-wrapper"><table class="loan-table"><thead><tr>';
-        html += '<th>#</th><th>Date</th><th>Payment</th><th>Principal</th><th>Interest</th><th>Balance</th>';
+        html += '<th>#</th><th>Date</th><th>Payment</th><th>Principal</th><th>Interest</th><th>Balance</th><th></th>';
         html += '</tr></thead><tbody>';
 
         schedule.forEach(p => {
-            html += '<tr>';
+            const skippedClass = p.skipped ? ' class="loan-payment-skipped"' : '';
+            html += `<tr${skippedClass}>`;
             html += `<td>${p.number}</td>`;
             html += `<td>${Utils.formatMonthShort(p.month)}</td>`;
-            html += `<td>${fmtAmt(p.payment)}</td>`;
-            html += `<td>${fmtAmt(p.principal)}</td>`;
+            html += `<td>${p.skipped ? '—' : fmtAmt(p.payment)}</td>`;
+            html += `<td>${p.skipped ? '—' : fmtAmt(p.principal)}</td>`;
             html += `<td class="amount-payable">${fmtAmt(p.interest)}</td>`;
             html += `<td>${fmtAmt(p.ending_balance)}</td>`;
+            html += `<td><button class="btn-icon loan-skip-btn" data-loan-id="${selectedLoan.id}" data-payment="${p.number}" title="${p.skipped ? 'Restore payment' : 'Skip payment'}">${p.skipped ? '&#8634;' : '&times;'}</button></td>`;
             html += '</tr>';
         });
 

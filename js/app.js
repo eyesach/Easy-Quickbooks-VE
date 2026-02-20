@@ -1278,6 +1278,16 @@ const App = {
             }
         });
 
+        // Loan payment skip/restore click delegation
+        document.getElementById('loanDetailPanel').addEventListener('click', (e) => {
+            const skipBtn = e.target.closest('.loan-skip-btn');
+            if (!skipBtn) return;
+            const loanId = parseInt(skipBtn.dataset.loanId);
+            const paymentNum = parseInt(skipBtn.dataset.payment);
+            Database.toggleSkipLoanPayment(loanId, paymentNum);
+            this.refreshLoans();
+        });
+
         // ==================== MODALS & KEYBOARD ====================
 
         // Close modals on outside click
@@ -2108,13 +2118,14 @@ const App = {
         const loans = Database.getLoans();
         let totalLoanBalance = 0;
         const loanDetails = loans.map(loan => {
+            const skipped = Database.getSkippedPayments(loan.id);
             const schedule = Utils.computeAmortizationSchedule({
                 principal: loan.principal,
                 annual_rate: loan.annual_rate,
                 term_months: loan.term_months,
                 payments_per_year: loan.payments_per_year,
                 start_date: loan.start_date
-            });
+            }, skipped);
 
             let balance = loan.principal;
             for (let i = schedule.length - 1; i >= 0; i--) {

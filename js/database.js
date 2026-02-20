@@ -145,6 +145,14 @@ const Database = {
             )
         `);
 
+        this.db.run(`
+            CREATE TABLE IF NOT EXISTS loan_skipped_payments (
+                loan_id INTEGER NOT NULL,
+                payment_number INTEGER NOT NULL,
+                PRIMARY KEY(loan_id, payment_number)
+            )
+        `);
+
         // Create default "Monthly Expenses" folder
         this.db.run('INSERT OR IGNORE INTO category_folders (name, folder_type, sort_order) VALUES (?, ?, ?)', ['Monthly Expenses', 'payable', 0]);
 
@@ -366,6 +374,15 @@ const Database = {
                 month TEXT,
                 override_amount DECIMAL(10,2),
                 PRIMARY KEY(category_id, month)
+            )
+        `);
+
+        // === Create loan_skipped_payments table ===
+        this.db.run(`
+            CREATE TABLE IF NOT EXISTS loan_skipped_payments (
+                loan_id INTEGER NOT NULL,
+                payment_number INTEGER NOT NULL,
+                PRIMARY KEY(loan_id, payment_number)
             )
         `);
     },
@@ -1294,6 +1311,39 @@ const Database = {
      */
     deleteLoan(id) {
         this.db.run('UPDATE loans SET is_active = 0 WHERE id = ?', [id]);
+        this.db.run('DELETE FROM loan_skipped_payments WHERE loan_id = ?', [id]);
+        this.autoSave();
+    },
+
+    /**
+     * Get skipped payment numbers for a loan
+     * @param {number} loanId
+     * @returns {Set<number>} Set of skipped payment numbers
+     */
+    getSkippedPayments(loanId) {
+        const results = this.db.exec('SELECT payment_number FROM loan_skipped_payments WHERE loan_id = ?', [loanId]);
+        const set = new Set();
+        if (results.length > 0) {
+            results[0].values.forEach(row => set.add(row[0]));
+        }
+        return set;
+    },
+
+    /**
+     * Toggle a loan payment as skipped/unskipped
+     * @param {number} loanId
+     * @param {number} paymentNumber
+     */
+    toggleSkipLoanPayment(loanId, paymentNumber) {
+        const existing = this.db.exec(
+            'SELECT 1 FROM loan_skipped_payments WHERE loan_id = ? AND payment_number = ?',
+            [loanId, paymentNumber]
+        );
+        if (existing.length > 0 && existing[0].values.length > 0) {
+            this.db.run('DELETE FROM loan_skipped_payments WHERE loan_id = ? AND payment_number = ?', [loanId, paymentNumber]);
+        } else {
+            this.db.run('INSERT INTO loan_skipped_payments (loan_id, payment_number) VALUES (?, ?)', [loanId, paymentNumber]);
+        }
         this.autoSave();
     },
 
@@ -1307,16 +1357,18 @@ const Database = {
         const result = {};
 
         loans.forEach(loan => {
+            const skipped = this.getSkippedPayments(loan.id);
             const schedule = Utils.computeAmortizationSchedule({
                 principal: loan.principal,
                 annual_rate: loan.annual_rate,
                 term_months: loan.term_months,
                 payments_per_year: loan.payments_per_year,
                 start_date: loan.start_date
-            });
+            }, skipped);
 
             schedule.forEach(entry => {
                 if (asOfMonth && entry.month > asOfMonth) return;
+                if (entry.skipped) return;
                 result[entry.month] = Math.round(((result[entry.month] || 0) + entry.interest) * 100) / 100;
             });
         });

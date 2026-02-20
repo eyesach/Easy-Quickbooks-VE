@@ -2061,6 +2061,36 @@ body {
     overflow-y: auto;
 }
 
+.loan-payment-skipped td {
+    text-decoration: line-through;
+    opacity: 0.45;
+}
+
+.loan-payment-skipped td:last-child {
+    text-decoration: none;
+}
+
+.loan-skip-btn {
+    font-size: 0.85rem;
+    padding: 2px 6px;
+    opacity: 0.3;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--color-text);
+    border-radius: var(--radius-sm);
+}
+
+.loan-skip-btn:hover {
+    opacity: 1;
+    background: rgba(var(--color-primary-rgb), 0.1);
+}
+
+.loan-payment-skipped .loan-skip-btn {
+    opacity: 0.6;
+    color: var(--color-primary);
+}
+
 /* Sales Tax badge */
 .category-badge.sales-tax {
     background-color: #e0f2f1;

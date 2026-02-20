@@ -494,9 +494,10 @@ const Utils = {
      * Accepts { principal, annual_rate, term_months, payments_per_year, start_date }.
      * Backward compat: if term_years is provided instead of term_months, auto-convert.
      * @param {Object} config - Loan configuration
+     * @param {Set} [skippedPayments] - Set of payment numbers to skip
      * @returns {Array} Array of payment objects
      */
-    computeAmortizationSchedule(config) {
+    computeAmortizationSchedule(config, skippedPayments) {
         const { principal, annual_rate, payments_per_year, start_date } = config;
         const termMonths = config.term_months || (config.term_years ? config.term_years * 12 : 0);
         const termYears = termMonths / 12;
@@ -520,31 +521,47 @@ const Utils = {
 
         for (let i = 1; i <= totalPayments; i++) {
             const interest = round2(balance * periodicRate);
-            let principalPart = round2(payment - interest);
-
-            // Last payment: adjust to zero out balance exactly
-            if (i === totalPayments) {
-                principalPart = balance;
-                // Recalculate final payment as principal + interest
-            }
-
-            balance = round2(balance - principalPart);
-            if (balance < 0.01) balance = 0;
+            const isSkipped = skippedPayments && skippedPayments.has(i);
 
             const paymentDate = new Date(startDate);
             paymentDate.setMonth(paymentDate.getMonth() + Math.round(monthsBetween * i));
             const month = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
 
-            const actualPayment = (i === totalPayments) ? round2(principalPart + interest) : payment;
+            if (isSkipped) {
+                // Skipped: interest accrues but no payment made
+                balance = round2(balance + interest);
+                schedule.push({
+                    number: i,
+                    month,
+                    payment: 0,
+                    principal: 0,
+                    interest: interest,
+                    ending_balance: balance,
+                    skipped: true
+                });
+            } else {
+                let principalPart = round2(payment - interest);
 
-            schedule.push({
-                number: i,
-                month,
-                payment: actualPayment,
-                principal: principalPart,
-                interest: interest,
-                ending_balance: balance
-            });
+                // Last non-skipped payment or final payment: zero out balance
+                if (i === totalPayments) {
+                    principalPart = balance;
+                }
+
+                balance = round2(balance - principalPart);
+                if (balance < 0.01) balance = 0;
+
+                const actualPayment = (i === totalPayments) ? round2(principalPart + interest) : payment;
+
+                schedule.push({
+                    number: i,
+                    month,
+                    payment: actualPayment,
+                    principal: principalPart,
+                    interest: interest,
+                    ending_balance: balance,
+                    skipped: false
+                });
+            }
         }
 
         return schedule;
