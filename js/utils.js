@@ -138,6 +138,98 @@ const Utils = {
     },
 
     /**
+     * Generate array of YYYY-MM strings from start to end (inclusive)
+     * @param {string} startMonth - Start month (YYYY-MM)
+     * @param {string} endMonth - End month (YYYY-MM)
+     * @returns {Array} Array of YYYY-MM strings
+     */
+    generateMonthRange(startMonth, endMonth) {
+        const result = [];
+        const [sy, sm] = startMonth.split('-').map(Number);
+        const [ey, em] = endMonth.split('-').map(Number);
+        let y = sy, m = sm;
+        while (y < ey || (y === ey && m <= em)) {
+            result.push(`${y}-${String(m).padStart(2, '0')}`);
+            m++;
+            if (m > 12) { m = 1; y++; }
+        }
+        return result;
+    },
+
+    /**
+     * Filter months array by timeline boundaries
+     * @param {Array} months - Array of YYYY-MM strings
+     * @param {string|null} start - Timeline start month or null
+     * @param {string|null} end - Timeline end month or null
+     * @returns {Array} Filtered months
+     */
+    filterMonthsByTimeline(months, start, end) {
+        return months.filter(m => {
+            if (start && m < start) return false;
+            if (end && m > end) return false;
+            return true;
+        });
+    },
+
+    /**
+     * Get years that overlap a timeline range
+     * @param {string|null} start - Timeline start (YYYY-MM) or null
+     * @param {string|null} end - Timeline end (YYYY-MM) or null
+     * @returns {Array} Array of year numbers
+     */
+    getYearsInTimeline(start, end) {
+        if (!start && !end) return this.generateYearOptions();
+        const startYear = start ? parseInt(start.split('-')[0]) : new Date().getFullYear() - 2;
+        const endYear = end ? parseInt(end.split('-')[0]) : new Date().getFullYear() + 3;
+        const years = [];
+        for (let y = startYear; y <= endYear; y++) {
+            years.push(y);
+        }
+        return years;
+    },
+
+    /**
+     * Check if a month string is in the future (after current month)
+     * @param {string} month - YYYY-MM string
+     * @returns {boolean}
+     */
+    isFutureMonth(month) {
+        return month > this.getCurrentMonth();
+    },
+
+    /**
+     * Get the next month after the given month
+     * @param {string} month - YYYY-MM string
+     * @returns {string} Next month YYYY-MM string
+     */
+    nextMonth(month) {
+        const [y, m] = month.split('-').map(Number);
+        if (m === 12) return `${y + 1}-01`;
+        return `${y}-${String(m + 1).padStart(2, '0')}`;
+    },
+
+    /**
+     * Convert YYYY-MM to first day of month for date picker min
+     * @param {string} month - YYYY-MM string
+     * @returns {string} YYYY-MM-01
+     */
+    timelineToDateMin(month) {
+        return month ? `${month}-01` : '';
+    },
+
+    /**
+     * Convert YYYY-MM to last day of month for date picker max
+     * @param {string} month - YYYY-MM string
+     * @returns {string} YYYY-MM-{lastDay}
+     */
+    timelineToDateMax(month) {
+        if (!month) return '';
+        const [y, m] = month.split('-').map(Number);
+        const lastDay = new Date(y, m, 0).getDate();
+        return `${month}-${String(lastDay).padStart(2, '0')}`;
+    },
+
+    /**
      * Check if payment was late (paid after due month)
      * @param {string} monthDue - Month due (YYYY-MM)
      * @param {string} monthPaid - Month paid (YYYY-MM)

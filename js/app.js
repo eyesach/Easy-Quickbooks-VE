@@ -15,6 +15,7 @@ const App = {
     savedFileHandle: null,
     pendingInlineStatusChange: null, // {id, newStatus, selectElement}
     currentSortMode: 'entryDate',
+    _timeline: null,
 
     // Theme preset palettes: { c1: primary, c2: accent, c3: background, c4: surface }
     themePresets: {
@@ -48,6 +49,13 @@ const App = {
 
             // Load and apply saved theme
             this.loadAndApplyTheme();
+
+            // Restore tab order and set up tab drag-drop
+            this.restoreTabOrder();
+            this.setupTabDragDrop();
+
+            // Load and apply timeline
+            this.loadAndApplyTimeline();
 
             // Load and render data
             this.refreshAll();
@@ -135,8 +143,30 @@ const App = {
      */
     refreshCashFlow() {
         const data = Database.getCashFlowSpreadsheet();
-        UI.renderCashFlowSpreadsheet(data);
+        const timeline = this.getTimeline();
+        const currentMonth = Utils.getCurrentMonth();
+        const cfOverrides = Database.getAllCashFlowOverrides();
+
+        // Filter months by timeline
+        if (timeline.start || timeline.end) {
+            data.months = Utils.filterMonthsByTimeline(data.months, timeline.start, timeline.end);
+        }
+
+        // Add future months up to timeline end (for projections)
+        if (timeline.end && timeline.end > currentMonth) {
+            let m = Utils.nextMonth(currentMonth);
+            while (m <= timeline.end) {
+                if (!data.months.includes(m)) {
+                    data.months.push(m);
+                }
+                m = Utils.nextMonth(m);
+            }
+            data.months.sort();
+        }
+
+        UI.renderCashFlowSpreadsheet(data, cfOverrides, currentMonth);
         this.setupCashFlowDragDrop();
+        this.setupCashFlowCellEditing();
     },
 
     /**
@@ -204,16 +234,294 @@ const App = {
     },
 
     /**
+     * Set up drag and drop for main tab reordering
+     */
+    setupTabDragDrop() {
+        const nav = document.querySelector('.main-tabs');
+        if (!nav || nav.dataset.tabDragSetup) return;
+        nav.dataset.tabDragSetup = '1';
+
+        let draggedTab = null;
+
+        nav.querySelectorAll('.main-tab').forEach(btn => {
+            btn.setAttribute('draggable', 'true');
+        });
+
+        nav.addEventListener('dragstart', (e) => {
+            const tab = e.target.closest('.main-tab');
+            if (!tab) return;
+            draggedTab = tab;
+            tab.classList.add('tab-dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', tab.dataset.tab);
+        });
+
+        nav.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const tab = e.target.closest('.main-tab');
+            if (!tab || tab === draggedTab || !draggedTab) return;
+            e.dataTransfer.dropEffect = 'move';
+            nav.querySelectorAll('.main-tab.tab-drag-over').forEach(t => t.classList.remove('tab-drag-over'));
+            tab.classList.add('tab-drag-over');
+        });
+
+        nav.addEventListener('dragleave', (e) => {
+            const tab = e.target.closest('.main-tab');
+            if (tab) tab.classList.remove('tab-drag-over');
+        });
+
+        nav.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const targetTab = e.target.closest('.main-tab');
+            if (!targetTab || !draggedTab || targetTab === draggedTab) return;
+
+            nav.insertBefore(draggedTab, targetTab);
+            targetTab.classList.remove('tab-drag-over');
+
+            // Save new order
+            const tabs = nav.querySelectorAll('.main-tab');
+            const order = Array.from(tabs).map(t => t.dataset.tab);
+            Database.setTabOrder(order);
+        });
+
+        nav.addEventListener('dragend', () => {
+            if (draggedTab) {
+                draggedTab.classList.remove('tab-dragging');
+                draggedTab = null;
+            }
+            nav.querySelectorAll('.tab-drag-over').forEach(t => t.classList.remove('tab-drag-over'));
+        });
+    },
+
+    /**
+     * Restore saved tab order from database
+     */
+    restoreTabOrder() {
+        const order = Database.getTabOrder();
+        if (!order || !Array.isArray(order)) return;
+
+        const nav = document.querySelector('.main-tabs');
+        if (!nav) return;
+
+        order.forEach(tabName => {
+            const tab = nav.querySelector(`.main-tab[data-tab="${tabName}"]`);
+            if (tab) nav.appendChild(tab);
+        });
+
+        // Append any tabs not in the saved order (e.g., newly added tabs)
+        nav.querySelectorAll('.main-tab').forEach(tab => {
+            if (!order.includes(tab.dataset.tab)) {
+                nav.appendChild(tab);
+            }
+        });
+    },
+
+    /**
+     * Set up inline cell editing for Cash Flow projected cells (only binds once)
+     */
+    setupCashFlowCellEditing() {
+        const container = document.getElementById('cashflowSpreadsheet');
+        if (!container || container.dataset.cfCellSetup) return;
+        container.dataset.cfCellSetup = '1';
+
+        container.addEventListener('click', (e) => {
+            const cell = e.target.closest('.cf-editable');
+            if (!cell) return;
+
+            const catId = parseInt(cell.dataset.catId);
+            const month = cell.dataset.month;
+            const currentText = cell.textContent.replace(/[^0-9.\-]/g, '');
+
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.step = '0.01';
+            input.className = 'pnl-cell-input';
+            input.value = currentText || '';
+            cell.textContent = '';
+            cell.appendChild(input);
+            input.focus();
+            input.select();
+
+            const save = () => {
+                const val = input.value.trim();
+                if (val === '') {
+                    Database.setCashFlowOverride(catId, month, null);
+                } else {
+                    Database.setCashFlowOverride(catId, month, parseFloat(val));
+                }
+                this.refreshCashFlow();
+            };
+
+            input.addEventListener('blur', save);
+            input.addEventListener('keydown', (ke) => {
+                if (ke.key === 'Enter') {
+                    ke.preventDefault();
+                    input.blur();
+                } else if (ke.key === 'Escape') {
+                    ke.preventDefault();
+                    this.refreshCashFlow();
+                }
+            });
+        });
+    },
+
+    /**
+     * Get cached timeline or read from DB
+     * @returns {Object} {start, end}
+     */
+    getTimeline() {
+        if (!this._timeline) {
+            this._timeline = Database.getTimeline();
+        }
+        return this._timeline;
+    },
+
+    /**
+     * Invalidate cached timeline
+     */
+    invalidateTimeline() {
+        this._timeline = null;
+    },
+
+    /**
+     * Load timeline from DB and sync gear popover selects
+     */
+    loadAndApplyTimeline() {
+        const timeline = Database.getTimeline();
+        this._timeline = timeline;
+
+        // Populate timeline year selects
+        const years = Utils.generateYearOptions();
+        ['timelineStartYear', 'timelineEndYear'].forEach(id => {
+            const select = document.getElementById(id);
+            if (!select) return;
+            select.innerHTML = '<option value="">Year...</option>';
+            years.forEach(y => {
+                const opt = document.createElement('option');
+                opt.value = y;
+                opt.textContent = y;
+                select.appendChild(opt);
+            });
+        });
+
+        // Sync selects to saved values
+        if (timeline.start) {
+            const [sy, sm] = timeline.start.split('-');
+            document.getElementById('timelineStartMonth').value = sm;
+            document.getElementById('timelineStartYear').value = sy;
+        } else {
+            document.getElementById('timelineStartMonth').value = '';
+            document.getElementById('timelineStartYear').value = '';
+        }
+        if (timeline.end) {
+            const [ey, em] = timeline.end.split('-');
+            document.getElementById('timelineEndMonth').value = em;
+            document.getElementById('timelineEndYear').value = ey;
+        } else {
+            document.getElementById('timelineEndMonth').value = '';
+            document.getElementById('timelineEndYear').value = '';
+        }
+
+        this.applyTimelineConstraints(timeline);
+    },
+
+    /**
+     * Apply timeline constraints to date pickers and year dropdowns
+     * @param {Object} timeline - {start, end}
+     */
+    applyTimelineConstraints(timeline) {
+        const dateMin = Utils.timelineToDateMin(timeline.start);
+        const dateMax = Utils.timelineToDateMax(timeline.end);
+
+        // Constrain all date inputs
+        const dateInputIds = [
+            'entryDate', 'dateProcessed', 'assetDate', 'assetDeprStart',
+            'loanStartDate', 'seedExpectedDate', 'seedReceivedDate',
+            'apicExpectedDate', 'apicReceivedDate', 'bulkEntryDate', 'bulkDateProcessed'
+        ];
+        dateInputIds.forEach(id => {
+            const input = document.getElementById(id);
+            if (!input) return;
+            input.min = dateMin;
+            input.max = dateMax;
+        });
+
+        // Constrain year dropdowns using timeline-aware years
+        const tlYears = Utils.getYearsInTimeline(timeline.start, timeline.end);
+        UI.populateYearDropdowns(timeline);
+
+        // Constrain BS year dropdown
+        const bsYearSelect = document.getElementById('bsMonthYear');
+        if (bsYearSelect) {
+            const currentVal = bsYearSelect.value;
+            bsYearSelect.innerHTML = '<option value="">Year...</option>';
+            tlYears.forEach(y => {
+                const opt = document.createElement('option');
+                opt.value = y;
+                opt.textContent = y;
+                bsYearSelect.appendChild(opt);
+            });
+            if (currentVal) bsYearSelect.value = currentVal;
+        }
+    },
+
+    /**
+     * Handle timeline select change
+     */
+    handleTimelineChange() {
+        const startMonth = document.getElementById('timelineStartMonth').value;
+        const startYear = document.getElementById('timelineStartYear').value;
+        const endMonth = document.getElementById('timelineEndMonth').value;
+        const endYear = document.getElementById('timelineEndYear').value;
+
+        const start = (startMonth && startYear) ? `${startYear}-${startMonth}` : null;
+        const end = (endMonth && endYear) ? `${endYear}-${endMonth}` : null;
+
+        // Save to DB and update cache (don't re-sync selects — user is editing them)
+        Database.setTimelineStart(start);
+        Database.setTimelineEnd(end);
+        this._timeline = { start, end };
+
+        this.applyTimelineConstraints(this._timeline);
+
+        // Only refresh tabs when at least one complete range endpoint exists
+        if (start || end) {
+            this.refreshAll();
+        }
+    },
+
+    /**
      * Refresh P&L spreadsheet
      */
     refreshPnL() {
         const plData = Database.getPLSpreadsheet();
         const overrides = Database.getAllPLOverrides();
         const taxMode = Database.getPLTaxMode();
+        const timeline = this.getTimeline();
+        const currentMonth = Utils.getCurrentMonth();
+
+        // Filter months by timeline
+        if (timeline.start || timeline.end) {
+            plData.months = Utils.filterMonthsByTimeline(plData.months, timeline.start, timeline.end);
+        }
+
+        // Add future months up to timeline end (for projections)
+        if (timeline.end && timeline.end > currentMonth) {
+            let m = Utils.nextMonth(currentMonth);
+            // Only add if beyond existing months
+            while (m <= timeline.end) {
+                if (!plData.months.includes(m)) {
+                    plData.months.push(m);
+                }
+                m = Utils.nextMonth(m);
+            }
+            plData.months.sort();
+        }
+
         // Sync dropdown
         const taxModeSelect = document.getElementById('plTaxMode');
         if (taxModeSelect) taxModeSelect.value = taxMode;
-        UI.renderProfitLossSpreadsheet(plData, overrides, taxMode);
+        UI.renderProfitLossSpreadsheet(plData, overrides, taxMode, currentMonth);
         this.setupPnLCellEditing();
     },
 
@@ -833,6 +1141,13 @@ const App = {
                 Database.setThemeColors(colors);
                 this.applyTheme('custom', colors);
             }, 100));
+        });
+
+        // ==================== TIMELINE ====================
+        ['timelineStartMonth', 'timelineStartYear', 'timelineEndMonth', 'timelineEndYear'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                this.handleTimelineChange();
+            });
         });
 
         // ==================== ADD FOLDER ENTRIES ====================
@@ -1834,12 +2149,16 @@ const App = {
         const totalLiabilitiesAndEquity = round2(totalLiabilities + totalEquity);
         const isBalanced = Math.abs(totalAssets - totalLiabilitiesAndEquity) < 0.01;
 
+        // AR/AP category breakdowns
+        const arByCategory = Database.getARByCategory(asOfMonth);
+        const apByCategory = Database.getAPByCategory(asOfMonth);
+
         const bsData = {
             asOfMonth,
-            cash, ar,
+            cash, ar, arByCategory,
             assetDetails, totalFixedAssetCost, totalAccumDepr, netFixedAssets,
             totalAssets,
-            ap, salesTaxPayable,
+            ap, apByCategory, salesTaxPayable,
             loanDetails, totalLoanBalance,
             totalLiabilities,
             commonStock, apic: apicVal, retainedEarnings, totalEquity,
@@ -1857,9 +2176,10 @@ const App = {
         const [year, month] = currentMonth.split('-');
         document.getElementById('bsMonthMonth').value = month;
 
-        // Populate year dropdown
+        // Populate year dropdown (timeline-aware)
         const yearSelect = document.getElementById('bsMonthYear');
-        const years = Utils.generateYearOptions();
+        const timeline = this.getTimeline();
+        const years = Utils.getYearsInTimeline(timeline.start, timeline.end);
         yearSelect.innerHTML = '<option value="">Year...</option>';
         years.forEach(y => {
             const opt = document.createElement('option');
@@ -2368,6 +2688,13 @@ const App = {
 
             // Reload theme from loaded database
             this.loadAndApplyTheme();
+
+            // Restore tab order and drag-drop from loaded database
+            this.restoreTabOrder();
+            this.setupTabDragDrop();
+
+            // Load and apply timeline from loaded database
+            this.loadAndApplyTimeline();
 
             this.refreshAll();
             UI.showNotification('Database loaded successfully', 'success');

@@ -52,9 +52,12 @@ const UI = {
 
     /**
      * Populate all year dropdown selects
+     * @param {Object} [timeline] - Optional {start, end} to constrain years
      */
-    populateYearDropdowns() {
-        const years = Utils.generateYearOptions();
+    populateYearDropdowns(timeline) {
+        const years = (timeline && (timeline.start || timeline.end))
+            ? Utils.getYearsInTimeline(timeline.start, timeline.end)
+            : Utils.generateYearOptions();
         const yearSelects = [
             'monthDueYear',
             'monthPaidYear',
@@ -620,10 +623,13 @@ const UI = {
     /**
      * Render the cash flow spreadsheet table (categories as rows, months as columns)
      * @param {Object} spreadsheetData - { months: string[], data: Object[] } from getCashFlowSpreadsheet()
+     * @param {Object} [cfOverrides] - Map of "categoryId-month" => override_amount
+     * @param {string} [currentMonth] - Current month YYYY-MM (for projection styling)
      */
-    renderCashFlowSpreadsheet(spreadsheetData) {
+    renderCashFlowSpreadsheet(spreadsheetData, cfOverrides, currentMonth) {
         const container = document.getElementById('cashflowSpreadsheet');
         const { months, data } = spreadsheetData;
+        cfOverrides = cfOverrides || {};
 
         if (months.length === 0) {
             container.innerHTML = '<p class="empty-state">No completed transactions yet.</p>';
@@ -647,7 +653,31 @@ const UI = {
         const receivableEntries = Array.from(receivableCatMap.entries());
         const payableEntries = Array.from(payableCatMap.entries());
 
-        // Calculate per-month totals
+        // Helpers (defined before totals so projections are reflected in subtotals)
+        const fmtMonth = (m) => Utils.formatMonthShort(m);
+        const fmtAmt = (amt) => Utils.formatCurrency(amt);
+        const isFuture = (m) => currentMonth && m > currentMonth;
+
+        const getCFVal = (catId, month, computed) => {
+            const key = `${catId}-${month}`;
+            return (key in cfOverrides) ? cfOverrides[key] : computed;
+        };
+        const isCFOverridden = (catId, month) => `${catId}-${month}` in cfOverrides;
+
+        const computeCFProjectedAvg = (catMonths) => {
+            if (!currentMonth) return 0;
+            const pastValues = months.filter(m => !isFuture(m)).map(m => catMonths[m] || 0).filter(v => v > 0);
+            return pastValues.length > 0 ? pastValues.reduce((a, b) => a + b, 0) / pastValues.length : 0;
+        };
+
+        // Effective value for a category in a month (with projection + override)
+        const getEffectiveVal = (catId, catData, m) => {
+            const raw = catData.months[m] || 0;
+            const fallback = isFuture(m) && raw === 0 ? computeCFProjectedAvg(catData.months) : raw;
+            return getCFVal(catId, m, fallback);
+        };
+
+        // Calculate per-month totals (using effective projected/override values)
         const monthReceipts = {};
         const monthPayments = {};
         months.forEach(m => {
@@ -655,15 +685,15 @@ const UI = {
             monthPayments[m] = 0;
         });
 
-        receivableEntries.forEach(([, catData]) => {
+        receivableEntries.forEach(([catId, catData]) => {
             months.forEach(m => {
-                monthReceipts[m] += catData.months[m] || 0;
+                monthReceipts[m] += getEffectiveVal(catId, catData, m);
             });
         });
 
-        payableEntries.forEach(([, catData]) => {
+        payableEntries.forEach(([catId, catData]) => {
             months.forEach(m => {
-                monthPayments[m] += catData.months[m] || 0;
+                monthPayments[m] += getEffectiveVal(catId, catData, m);
             });
         });
 
@@ -675,13 +705,13 @@ const UI = {
             runningBalance += monthReceipts[m] - monthPayments[m];
         });
 
-        // Build table
-        const fmtMonth = (m) => Utils.formatMonthShort(m);
-        const fmtAmt = (amt) => Utils.formatCurrency(amt);
-
         let html = '<table class="cashflow-table"><thead><tr>';
         html += '<th></th>';
-        months.forEach(m => { html += `<th>${fmtMonth(m)}</th>`; });
+        months.forEach(m => {
+            const futureClass = isFuture(m) ? ' cashflow-future-header' : '';
+            const badge = isFuture(m) ? ' <span class="projected-badge">P</span>' : '';
+            html += `<th class="${futureClass}">${fmtMonth(m)}${badge}</th>`;
+        });
         html += '<th>Total</th>';
         html += '</tr></thead><tbody>';
 
@@ -699,9 +729,12 @@ const UI = {
             html += `<tr draggable="true" data-category-id="${catId}" data-section="receivable">`;
             html += '<td class="cashflow-indent cashflow-drag-handle">' + Utils.escapeHtml(catData.name) + '</td>';
             months.forEach(m => {
-                const amt = catData.months[m] || 0;
+                const amt = getEffectiveVal(catId, catData, m);
                 rowTotal += amt;
-                html += `<td class="amount-receivable">${amt ? fmtAmt(amt) : ''}</td>`;
+                const overClass = isCFOverridden(catId, m) ? ' pnl-overridden' : '';
+                const projClass = isFuture(m) && !isCFOverridden(catId, m) ? ' cashflow-projected' : '';
+                const editClass = isFuture(m) ? ' cf-editable' : '';
+                html += `<td class="amount-receivable${overClass}${projClass}${editClass}" data-cat-id="${catId}" data-month="${m}">${amt ? fmtAmt(amt) : ''}</td>`;
             });
             html += `<td class="amount-receivable">${fmtAmt(rowTotal)}</td></tr>`;
         });
@@ -737,9 +770,12 @@ const UI = {
             html += `<tr draggable="true" data-category-id="${catId}" data-section="payable">`;
             html += '<td class="cashflow-indent cashflow-drag-handle">' + Utils.escapeHtml(catData.name) + '</td>';
             months.forEach(m => {
-                const amt = catData.months[m] || 0;
+                const amt = getEffectiveVal(catId, catData, m);
                 rowTotal += amt;
-                html += `<td class="amount-payable">${amt ? fmtAmt(amt) : ''}</td>`;
+                const overClass = isCFOverridden(catId, m) ? ' pnl-overridden' : '';
+                const projClass = isFuture(m) && !isCFOverridden(catId, m) ? ' cashflow-projected' : '';
+                const editClass = isFuture(m) ? ' cf-editable' : '';
+                html += `<td class="amount-payable${overClass}${projClass}${editClass}" data-cat-id="${catId}" data-month="${m}">${amt ? fmtAmt(amt) : ''}</td>`;
             });
             html += `<td class="amount-payable">${fmtAmt(rowTotal)}</td></tr>`;
         });
@@ -788,8 +824,9 @@ const UI = {
      * @param {Object} plData - { months, revenue, cogs, opex } from getPLSpreadsheet()
      * @param {Object} overrides - Map of "categoryId-month" => override_amount
      * @param {string} taxMode - 'corporate' (21%) or 'passthrough' ($0)
+     * @param {string} [currentMonth] - Current month YYYY-MM (for projection styling)
      */
-    renderProfitLossSpreadsheet(plData, overrides, taxMode) {
+    renderProfitLossSpreadsheet(plData, overrides, taxMode, currentMonth) {
         const container = document.getElementById('pnlSpreadsheet');
         const { months, revenue, cogs, opex, depreciation, assetDeprByMonth, loanInterestByMonth } = plData;
 
@@ -831,10 +868,24 @@ const UI = {
         const cogsEntries = groupByCategory(cogs);
         const opexEntries = groupByCategory(opex);
 
+        // Helper: check if month is projected (future)
+        const isFuture = (m) => currentMonth && m > currentMonth;
+
+        // Compute projected averages per category from past months
+        const computeProjectedAvg = (catMonths) => {
+            if (!currentMonth) return 0;
+            const pastValues = months.filter(m => !isFuture(m)).map(m => catMonths[m] || 0).filter(v => v > 0);
+            return pastValues.length > 0 ? pastValues.reduce((a, b) => a + b, 0) / pastValues.length : 0;
+        };
+
         // Start building table
         let html = '<table class="pnl-table"><thead><tr>';
         html += '<th></th>';
-        months.forEach(m => { html += `<th>${fmtMonth(m)}</th>`; });
+        months.forEach(m => {
+            const futureClass = isFuture(m) ? ' pnl-future-header' : '';
+            const badge = isFuture(m) ? ' <span class="projected-badge">P</span>' : '';
+            html += `<th class="${futureClass}">${fmtMonth(m)}${badge}</th>`;
+        });
         html += '<th>Total</th>';
         html += '</tr></thead><tbody>';
 
@@ -846,14 +897,17 @@ const UI = {
 
         revenueEntries.forEach(([catId, catData]) => {
             let rowTotal = 0;
+            const projAvg = computeProjectedAvg(catData.months);
             html += `<tr class="pnl-indent"><td>${Utils.escapeHtml(catData.name)}</td>`;
             months.forEach(m => {
                 const computed = catData.months[m] || 0;
-                const val = getVal(catId, m, computed);
+                const fallback = isFuture(m) && computed === 0 ? projAvg : computed;
+                const val = getVal(catId, m, fallback);
                 monthRevenue[m] += val;
                 rowTotal += val;
                 const overriddenClass = isOverridden(catId, m) ? ' pnl-overridden' : '';
-                html += `<td class="pnl-editable${overriddenClass}" data-cat-id="${catId}" data-month="${m}">${fmtAmt(val)}</td>`;
+                const projClass = isFuture(m) && !isOverridden(catId, m) ? ' pnl-projected' : '';
+                html += `<td class="pnl-editable${overriddenClass}${projClass}" data-cat-id="${catId}" data-month="${m}">${fmtAmt(val)}</td>`;
             });
             html += `<td>${fmtAmt(rowTotal)}</td></tr>`;
         });
@@ -875,14 +929,17 @@ const UI = {
 
         cogsEntries.forEach(([catId, catData]) => {
             let rowTotal = 0;
+            const projAvg = computeProjectedAvg(catData.months);
             html += `<tr class="pnl-indent"><td>${Utils.escapeHtml(catData.name)}</td>`;
             months.forEach(m => {
                 const computed = catData.months[m] || 0;
-                const val = getVal(catId, m, computed);
+                const fallback = isFuture(m) && computed === 0 ? projAvg : computed;
+                const val = getVal(catId, m, fallback);
                 monthCogs[m] += val;
                 rowTotal += val;
                 const overriddenClass = isOverridden(catId, m) ? ' pnl-overridden' : '';
-                html += `<td class="pnl-editable${overriddenClass}" data-cat-id="${catId}" data-month="${m}">${fmtAmt(val)}</td>`;
+                const projClass = isFuture(m) && !isOverridden(catId, m) ? ' pnl-projected' : '';
+                html += `<td class="pnl-editable${overriddenClass}${projClass}" data-cat-id="${catId}" data-month="${m}">${fmtAmt(val)}</td>`;
             });
             html += `<td>${fmtAmt(rowTotal)}</td></tr>`;
         });
@@ -924,14 +981,17 @@ const UI = {
 
         opexEntries.forEach(([catId, catData]) => {
             let rowTotal = 0;
+            const projAvg = computeProjectedAvg(catData.months);
             html += `<tr class="pnl-indent"><td>${Utils.escapeHtml(catData.name)}</td>`;
             months.forEach(m => {
                 const computed = catData.months[m] || 0;
-                const val = getVal(catId, m, computed);
+                const fallback = isFuture(m) && computed === 0 ? projAvg : computed;
+                const val = getVal(catId, m, fallback);
                 monthOpex[m] += val;
                 rowTotal += val;
                 const overriddenClass = isOverridden(catId, m) ? ' pnl-overridden' : '';
-                html += `<td class="pnl-editable${overriddenClass}" data-cat-id="${catId}" data-month="${m}">${fmtAmt(val)}</td>`;
+                const projClass = isFuture(m) && !isOverridden(catId, m) ? ' pnl-projected' : '';
+                html += `<td class="pnl-editable${overriddenClass}${projClass}" data-cat-id="${catId}" data-month="${m}">${fmtAmt(val)}</td>`;
             });
             html += `<td>${fmtAmt(rowTotal)}</td></tr>`;
         });
@@ -1062,7 +1122,9 @@ const UI = {
         const fmtAmt = (amt) => Utils.formatCurrency(amt);
         const monthLabel = Utils.formatMonthDisplay(data.asOfMonth);
 
-        let html = `<div class="bs-date-label" style="font-size:0.8rem;color:var(--color-text-muted);margin-bottom:12px;">As of ${monthLabel}</div>`;
+        const isProjected = Utils.isFutureMonth(data.asOfMonth);
+        const projLabel = isProjected ? ' <span class="bs-projected-label">Projected</span>' : '';
+        let html = `<div class="bs-date-label" style="font-size:0.8rem;color:var(--color-text-muted);margin-bottom:12px;">As of ${monthLabel}${projLabel}</div>`;
 
         html += '<table class="bs-table"><tbody>';
 
@@ -1073,6 +1135,11 @@ const UI = {
         html += '<tr class="bs-subsection"><td colspan="2">Current Assets</td></tr>';
         html += `<tr class="bs-indent"><td>Cash</td><td>${fmtAmt(data.cash)}</td></tr>`;
         html += `<tr class="bs-indent"><td>Accounts Receivable</td><td>${fmtAmt(data.ar)}</td></tr>`;
+        if (data.arByCategory && data.arByCategory.length > 0) {
+            data.arByCategory.forEach(cat => {
+                html += `<tr class="bs-detail-indent"><td>${Utils.escapeHtml(cat.category_name)}</td><td>${fmtAmt(cat.total)}</td></tr>`;
+            });
+        }
 
         const totalCurrentAssets = data.cash + data.ar;
         html += `<tr class="bs-subtotal"><td>Total Current Assets</td><td>${fmtAmt(totalCurrentAssets)}</td></tr>`;
@@ -1103,6 +1170,11 @@ const UI = {
         // Current Liabilities
         html += '<tr class="bs-subsection"><td colspan="2">Current Liabilities</td></tr>';
         html += `<tr class="bs-indent"><td>Accounts Payable</td><td>${fmtAmt(data.ap)}</td></tr>`;
+        if (data.apByCategory && data.apByCategory.length > 0) {
+            data.apByCategory.forEach(cat => {
+                html += `<tr class="bs-detail-indent"><td>${Utils.escapeHtml(cat.category_name)}</td><td>${fmtAmt(cat.total)}</td></tr>`;
+            });
+        }
         html += `<tr class="bs-indent"><td>Sales Tax Payable</td><td>${fmtAmt(data.salesTaxPayable)}</td></tr>`;
 
         const totalCurrentLiabilities = data.ap + data.salesTaxPayable;

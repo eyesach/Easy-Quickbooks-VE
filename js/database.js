@@ -105,6 +105,15 @@ const Database = {
         `);
 
         this.db.run(`
+            CREATE TABLE IF NOT EXISTS cashflow_overrides (
+                category_id INTEGER,
+                month TEXT,
+                override_amount DECIMAL(10,2),
+                PRIMARY KEY(category_id, month)
+            )
+        `);
+
+        this.db.run(`
             CREATE TABLE IF NOT EXISTS balance_sheet_assets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -349,6 +358,16 @@ const Database = {
             }
             this.db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('loans_migration_v1', '1')");
         }
+
+        // === Create cashflow_overrides table ===
+        this.db.run(`
+            CREATE TABLE IF NOT EXISTS cashflow_overrides (
+                category_id INTEGER,
+                month TEXT,
+                override_amount DECIMAL(10,2),
+                PRIMARY KEY(category_id, month)
+            )
+        `);
     },
 
     // ==================== FOLDER OPERATIONS ====================
@@ -1359,6 +1378,106 @@ const Database = {
         this.autoSave();
     },
 
+    // ==================== TAB ORDER ====================
+
+    /**
+     * Get saved tab order
+     * @returns {Array|null} Array of tab names or null if not set
+     */
+    getTabOrder() {
+        const result = this.db.exec("SELECT value FROM app_meta WHERE key = 'tab_order'");
+        if (result.length === 0 || result[0].values.length === 0) return null;
+        try {
+            return JSON.parse(result[0].values[0][0]);
+        } catch (e) {
+            return null;
+        }
+    },
+
+    /**
+     * Save tab order
+     * @param {Array} order - Array of tab name strings
+     */
+    setTabOrder(order) {
+        this.db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('tab_order', ?)", [JSON.stringify(order)]);
+        this.autoSave();
+    },
+
+    // ==================== TIMELINE ====================
+
+    /**
+     * Get timeline settings
+     * @returns {Object} { start: 'YYYY-MM' | null, end: 'YYYY-MM' | null }
+     */
+    getTimeline() {
+        const startResult = this.db.exec("SELECT value FROM app_meta WHERE key = 'timeline_start'");
+        const endResult = this.db.exec("SELECT value FROM app_meta WHERE key = 'timeline_end'");
+        return {
+            start: (startResult.length > 0 && startResult[0].values.length > 0) ? startResult[0].values[0][0] : null,
+            end: (endResult.length > 0 && endResult[0].values.length > 0) ? endResult[0].values[0][0] : null
+        };
+    },
+
+    /**
+     * Set timeline start month
+     * @param {string|null} month - 'YYYY-MM' or null to clear
+     */
+    setTimelineStart(month) {
+        if (month) {
+            this.db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('timeline_start', ?)", [month]);
+        } else {
+            this.db.run("DELETE FROM app_meta WHERE key = 'timeline_start'");
+        }
+        this.autoSave();
+    },
+
+    /**
+     * Set timeline end month
+     * @param {string|null} month - 'YYYY-MM' or null to clear
+     */
+    setTimelineEnd(month) {
+        if (month) {
+            this.db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('timeline_end', ?)", [month]);
+        } else {
+            this.db.run("DELETE FROM app_meta WHERE key = 'timeline_end'");
+        }
+        this.autoSave();
+    },
+
+    // ==================== CASH FLOW OVERRIDES ====================
+
+    /**
+     * Get all cash flow overrides
+     * @returns {Object} Map of "categoryId-month" => override_amount
+     */
+    getAllCashFlowOverrides() {
+        const results = this.db.exec('SELECT category_id, month, override_amount FROM cashflow_overrides');
+        if (results.length === 0) return {};
+        const overrides = {};
+        this.rowsToObjects(results[0]).forEach(row => {
+            overrides[`${row.category_id}-${row.month}`] = row.override_amount;
+        });
+        return overrides;
+    },
+
+    /**
+     * Set a cash flow override value for a category+month
+     * @param {number} categoryId - Category ID
+     * @param {string} month - Month (YYYY-MM)
+     * @param {number|null} amount - Override amount (null to remove)
+     */
+    setCashFlowOverride(categoryId, month, amount) {
+        if (amount === null || amount === '') {
+            this.db.run('DELETE FROM cashflow_overrides WHERE category_id = ? AND month = ?', [categoryId, month]);
+        } else {
+            this.db.run(
+                'INSERT OR REPLACE INTO cashflow_overrides (category_id, month, override_amount) VALUES (?, ?, ?)',
+                [categoryId, month, parseFloat(amount)]
+            );
+        }
+        this.autoSave();
+    },
+
     // ==================== BALANCE SHEET QUERIES ====================
 
     /**
@@ -1431,6 +1550,53 @@ const Database = {
             AND (t.status = 'pending' OR (t.status = 'paid' AND t.month_paid > ?))
         `, [asOfMonth, asOfMonth]);
         return result[0].values[0][0];
+    },
+
+    /**
+     * Get accounts receivable broken down by category as of a given month
+     * @param {string} asOfMonth - Month in YYYY-MM format
+     * @returns {Array} [{category_id, category_name, total}]
+     */
+    getARByCategory(asOfMonth) {
+        const results = this.db.exec(`
+            SELECT c.id as category_id, c.name as category_name,
+                   COALESCE(SUM(t.amount), 0) as total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE t.transaction_type = 'receivable'
+            AND t.month_due IS NOT NULL
+            AND t.month_due <= ?
+            AND (t.status = 'pending' OR (t.status = 'received' AND t.month_paid > ?))
+            GROUP BY c.id, c.name
+            HAVING total > 0
+            ORDER BY c.name ASC
+        `, [asOfMonth, asOfMonth]);
+        if (results.length === 0) return [];
+        return this.rowsToObjects(results[0]);
+    },
+
+    /**
+     * Get accounts payable broken down by category as of a given month (excludes sales tax)
+     * @param {string} asOfMonth - Month in YYYY-MM format
+     * @returns {Array} [{category_id, category_name, total}]
+     */
+    getAPByCategory(asOfMonth) {
+        const results = this.db.exec(`
+            SELECT c.id as category_id, c.name as category_name,
+                   COALESCE(SUM(t.amount), 0) as total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE t.transaction_type = 'payable'
+            AND c.is_sales_tax = 0
+            AND t.month_due IS NOT NULL
+            AND t.month_due <= ?
+            AND (t.status = 'pending' OR (t.status = 'paid' AND t.month_paid > ?))
+            GROUP BY c.id, c.name
+            HAVING total > 0
+            ORDER BY c.name ASC
+        `, [asOfMonth, asOfMonth]);
+        if (results.length === 0) return [];
+        return this.rowsToObjects(results[0]);
     },
 
     /**

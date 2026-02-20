@@ -461,6 +461,22 @@ body {
     border-bottom-color: var(--color-primary);
 }
 
+.main-tab.tab-dragging {
+    opacity: 0.4;
+}
+
+.main-tab.tab-drag-over {
+    border-left: 3px solid var(--color-primary);
+}
+
+.main-tab[draggable="true"] {
+    cursor: grab;
+}
+
+.main-tab[draggable="true"]:active {
+    cursor: grabbing;
+}
+
 /* Entry Modal - wider than standard modals */
 .modal-content.modal-entry {
     max-width: 700px;
@@ -1375,6 +1391,52 @@ body {
     color: var(--color-text-muted);
 }
 
+/* Projected cell styling (future months) */
+.pnl-projected,
+.cashflow-projected {
+    font-style: italic;
+    background: rgba(var(--color-primary-rgb), 0.06);
+}
+
+.pnl-future-header,
+.cashflow-future-header {
+    background: rgba(var(--color-primary-rgb), 0.10);
+}
+
+.projected-badge {
+    display: inline-block;
+    font-size: 0.6rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 2px 4px;
+    margin-left: 4px;
+    border-radius: 3px;
+    background: rgba(var(--color-primary-rgb), 0.18);
+    color: var(--color-primary);
+    vertical-align: super;
+    letter-spacing: 0.5px;
+}
+
+.cf-editable {
+    cursor: pointer;
+}
+
+.cf-editable:hover {
+    background: rgba(var(--color-primary-rgb), 0.12);
+}
+
+.bs-projected-label {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 6px;
+    margin-left: 8px;
+    border-radius: 3px;
+    background: rgba(var(--color-primary-rgb), 0.12);
+    color: var(--color-primary);
+    vertical-align: middle;
+}
+
 .pnl-cell-input {
     width: 90px;
     padding: 2px 4px;
@@ -1720,6 +1782,44 @@ body {
     border-radius: 2px;
 }
 
+/* Timeline controls in gear popover */
+.timeline-section {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.timeline-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.timeline-field-label {
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+    min-width: 32px;
+}
+
+.timeline-selects {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+}
+
+.timeline-selects select {
+    flex: 1;
+    padding: 4px 6px;
+    font-size: 0.8rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-white);
+    color: var(--color-text);
+}
+
 /* Balance Sheet Styles */
 .bs-section {
     background: var(--color-white);
@@ -1806,6 +1906,18 @@ body {
 
 .bs-indent td:first-child {
     padding-left: 32px;
+}
+
+.bs-detail-indent td:first-child {
+    padding-left: 48px;
+}
+
+.bs-detail-indent td {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+    padding-top: 4px;
+    padding-bottom: 4px;
 }
 
 .bs-subtotal td {
