@@ -1468,7 +1468,7 @@ const UI = {
             html += `<td>${p.skipped ? '—' : fmtAmt(p.principal)}</td>`;
             html += `<td class="amount-payable">${fmtAmt(p.interest)}</td>`;
             html += `<td>${fmtAmt(p.ending_balance)}</td>`;
-            html += `<td><button class="btn-icon loan-skip-btn" data-loan-id="${selectedLoan.id}" data-payment="${p.number}" title="${p.skipped ? 'Restore payment' : 'Skip payment'}">${p.skipped ? '&#8634;' : '&times;'}</button></td>`;
+            html += `<td><button class="loan-skip-btn" data-loan-id="${selectedLoan.id}" data-payment="${p.number}" title="${p.skipped ? 'Restore payment' : 'Skip payment'}">${p.skipped ? '&#8634;' : '&times;'}</button></td>`;
             html += '</tr>';
         });
 

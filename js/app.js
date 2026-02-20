@@ -1260,7 +1260,9 @@ const App = {
         });
 
         // Reset all data
-        document.getElementById('resetAllDataBtn').addEventListener('click', () => {
+        document.getElementById('resetAllDataBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.getElementById('gearPopover').style.display = 'none';
             document.getElementById('resetConfirmInput').value = '';
             document.getElementById('confirmResetBtn').disabled = true;
             UI.showModal('resetAllDataModal');
@@ -1269,15 +1271,19 @@ const App = {
             document.getElementById('confirmResetBtn').disabled = e.target.value.trim() !== 'RESET';
         });
         document.getElementById('confirmResetBtn').addEventListener('click', () => {
-            Database.resetAllData();
-            UI.hideModal('resetAllDataModal');
-            document.getElementById('gearPopover').style.display = 'none';
-            this.selectedLoanId = null;
-            this.selectedAssetId = null;
-            this._timeline = null;
-            this.refreshAll();
-            this.loadAndApplyTimeline();
-            UI.showNotification('All data has been reset', 'success');
+            try {
+                Database.resetAllData();
+                UI.hideModal('resetAllDataModal');
+                this.selectedLoanId = null;
+                this.selectedAssetId = null;
+                this._timeline = null;
+                this.refreshAll();
+                this.loadAndApplyTimeline();
+                UI.showNotification('All data has been reset', 'success');
+            } catch (error) {
+                console.error('Error resetting data:', error);
+                UI.showNotification('Failed to reset data: ' + error.message, 'error');
+            }
         });
         document.getElementById('cancelResetBtn').addEventListener('click', () => {
             UI.hideModal('resetAllDataModal');

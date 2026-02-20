@@ -582,47 +582,49 @@
 
         <!-- Loan Config Modal -->
         <div id="loanConfigModal" class="modal">
-            <div class="modal-content">
+            <div class="modal-content modal-wide">
                 <h3 id="loanConfigModalTitle">Add Loan</h3>
-                <form id="loanConfigForm">
+                <form id="loanConfigForm" class="compact-form">
                     <input type="hidden" id="editingLoanId" value="">
-                    <div class="form-group">
-                        <label for="loanName">Loan Name</label>
-                        <input type="text" id="loanName" required placeholder="e.g., SBA Loan">
-                    </div>
                     <div class="form-row">
+                        <div class="form-group">
+                            <label for="loanName">Loan Name</label>
+                            <input type="text" id="loanName" required placeholder="e.g., SBA Loan">
+                        </div>
                         <div class="form-group">
                             <label for="loanPrincipal">Principal Amount</label>
                             <input type="number" id="loanPrincipal" step="0.01" min="0" placeholder="0.00" required>
                         </div>
+                    </div>
+                    <div class="form-row">
                         <div class="form-group">
                             <label for="loanRate">Annual Interest Rate (%)</label>
                             <input type="number" id="loanRate" step="0.01" min="0" placeholder="5.00" required>
                         </div>
-                    </div>
-                    <div class="form-row">
                         <div class="form-group">
                             <label for="loanTermMonths">Term (months)</label>
                             <input type="number" id="loanTermMonths" min="1" placeholder="60" required>
                         </div>
+                    </div>
+                    <div class="form-row">
                         <div class="form-group">
                             <label for="loanPayments">Payments per Year</label>
                             <input type="number" id="loanPayments" min="1" max="365" placeholder="12" required>
                         </div>
-                    </div>
-                    <div class="form-row">
                         <div class="form-group">
                             <label for="loanStartDate">Loan Start Date</label>
                             <input type="date" id="loanStartDate" required>
                         </div>
+                    </div>
+                    <div class="form-row">
                         <div class="form-group">
                             <label for="loanFirstPaymentDate">First Payment Date</label>
                             <input type="date" id="loanFirstPaymentDate" placeholder="Optional">
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="loanNotes">Notes</label>
-                        <input type="text" id="loanNotes" placeholder="Optional notes">
+                        <div class="form-group">
+                            <label for="loanNotes">Notes</label>
+                            <input type="text" id="loanNotes" placeholder="Optional notes">
+                        </div>
                     </div>
                     <div class="form-actions">
                         <button type="button" id="cancelLoanConfigBtn" class="btn btn-secondary">Cancel</button>

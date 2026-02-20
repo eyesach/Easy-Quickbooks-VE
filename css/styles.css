@@ -1508,6 +1508,14 @@ body {
     margin-bottom: 16px;
 }
 
+.compact-form .form-group {
+    margin-bottom: 8px;
+}
+
+.compact-form .form-row {
+    gap: 12px;
+}
+
 /* Save As Input */
 .save-as-input {
     display: flex;
@@ -2080,27 +2088,37 @@ body {
 
 .loan-payment-skipped td:last-child {
     text-decoration: none;
+    opacity: 1;
 }
 
 .loan-skip-btn {
     font-size: 0.85rem;
     padding: 2px 6px;
-    opacity: 0.3;
+    opacity: 0;
     cursor: pointer;
     border: none;
     background: none;
     color: var(--color-text);
     border-radius: var(--radius-sm);
+    transition: opacity 0.15s;
+}
+
+.loan-table tbody tr:hover .loan-skip-btn {
+    opacity: 0.5;
 }
 
 .loan-skip-btn:hover {
-    opacity: 1;
+    opacity: 1 !important;
     background: rgba(var(--color-primary-rgb), 0.1);
 }
 
 .loan-payment-skipped .loan-skip-btn {
-    opacity: 0.6;
+    opacity: 0.6 !important;
     color: var(--color-primary);
+}
+
+.loan-payment-skipped .loan-skip-btn:hover {
+    opacity: 1 !important;
 }
 
 .loan-payment-cell {
@@ -2380,6 +2398,14 @@ body {
 .loan-list-actions {
     display: flex;
     gap: 4px;
+}
+
+.loan-list-actions .btn-icon {
+    opacity: 0.5;
+}
+
+.loan-list-item:hover .btn-icon {
+    opacity: 1;
 }
 
 .loan-detail-notes {
