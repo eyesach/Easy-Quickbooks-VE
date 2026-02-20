@@ -1820,6 +1820,18 @@ body {
     color: var(--color-text);
 }
 
+.gear-reset-section {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border);
+}
+
+.gear-reset-section .btn-sm {
+    width: 100%;
+    padding: 6px 12px;
+    font-size: 0.75rem;
+}
+
 /* Balance Sheet Styles */
 .bs-section {
     background: var(--color-white);

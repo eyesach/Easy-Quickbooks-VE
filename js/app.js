@@ -1259,6 +1259,30 @@ const App = {
             this.deleteLoanTargetId = null;
         });
 
+        // Reset all data
+        document.getElementById('resetAllDataBtn').addEventListener('click', () => {
+            document.getElementById('resetConfirmInput').value = '';
+            document.getElementById('confirmResetBtn').disabled = true;
+            UI.showModal('resetAllDataModal');
+        });
+        document.getElementById('resetConfirmInput').addEventListener('input', (e) => {
+            document.getElementById('confirmResetBtn').disabled = e.target.value.trim() !== 'RESET';
+        });
+        document.getElementById('confirmResetBtn').addEventListener('click', () => {
+            Database.resetAllData();
+            UI.hideModal('resetAllDataModal');
+            document.getElementById('gearPopover').style.display = 'none';
+            this.selectedLoanId = null;
+            this.selectedAssetId = null;
+            this._timeline = null;
+            this.refreshAll();
+            this.loadAndApplyTimeline();
+            UI.showNotification('All data has been reset', 'success');
+        });
+        document.getElementById('cancelResetBtn').addEventListener('click', () => {
+            UI.hideModal('resetAllDataModal');
+        });
+
         // Loan list panel click delegation
         document.getElementById('loanListPanel').addEventListener('click', (e) => {
             const editBtn = e.target.closest('.edit-loan-btn');

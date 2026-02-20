@@ -33,6 +33,16 @@ const Database = {
     },
 
     /**
+     * Reset all data by recreating the database from scratch
+     */
+    resetAllData() {
+        this.db.close();
+        this.db = new this.SQL.Database();
+        this.createSchema();
+        this.autoSave();
+    },
+
+    /**
      * Create database schema
      */
     createSchema() {
