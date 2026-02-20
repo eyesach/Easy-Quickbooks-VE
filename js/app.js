@@ -1278,14 +1278,52 @@ const App = {
             }
         });
 
-        // Loan payment skip/restore click delegation
+        // Loan payment skip/restore and cell editing delegation
         document.getElementById('loanDetailPanel').addEventListener('click', (e) => {
             const skipBtn = e.target.closest('.loan-skip-btn');
-            if (!skipBtn) return;
-            const loanId = parseInt(skipBtn.dataset.loanId);
-            const paymentNum = parseInt(skipBtn.dataset.payment);
-            Database.toggleSkipLoanPayment(loanId, paymentNum);
-            this.refreshLoans();
+            if (skipBtn) {
+                const loanId = parseInt(skipBtn.dataset.loanId);
+                const paymentNum = parseInt(skipBtn.dataset.payment);
+                Database.toggleSkipLoanPayment(loanId, paymentNum);
+                this.refreshLoans();
+                return;
+            }
+
+            // Click-to-edit payment amount
+            const cell = e.target.closest('.loan-payment-cell');
+            if (!cell || cell.querySelector('input') || cell.closest('.loan-payment-skipped')) return;
+
+            const loanId = parseInt(cell.dataset.loanId);
+            const paymentNum = parseInt(cell.dataset.payment);
+            const currentText = cell.textContent.replace(/[^0-9.\-]/g, '');
+
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.step = '0.01';
+            input.className = 'pnl-cell-input';
+            input.value = currentText || '';
+            cell.textContent = '';
+            cell.appendChild(input);
+            input.focus();
+            input.select();
+
+            const save = () => {
+                const val = input.value.trim();
+                if (val === '' || val === currentText) {
+                    if (val === '') {
+                        Database.setLoanPaymentOverride(loanId, paymentNum, null);
+                    }
+                } else {
+                    Database.setLoanPaymentOverride(loanId, paymentNum, parseFloat(val));
+                }
+                this.refreshLoans();
+            };
+
+            input.addEventListener('blur', save);
+            input.addEventListener('keydown', (ke) => {
+                if (ke.key === 'Enter') { ke.preventDefault(); input.blur(); }
+                else if (ke.key === 'Escape') { ke.preventDefault(); this.refreshLoans(); }
+            });
         });
 
         // ==================== MODALS & KEYBOARD ====================
@@ -2119,13 +2157,15 @@ const App = {
         let totalLoanBalance = 0;
         const loanDetails = loans.map(loan => {
             const skipped = Database.getSkippedPayments(loan.id);
+            const overrides = Database.getLoanPaymentOverrides(loan.id);
             const schedule = Utils.computeAmortizationSchedule({
                 principal: loan.principal,
                 annual_rate: loan.annual_rate,
                 term_months: loan.term_months,
                 payments_per_year: loan.payments_per_year,
-                start_date: loan.start_date
-            }, skipped);
+                start_date: loan.start_date,
+                first_payment_date: loan.first_payment_date
+            }, skipped, overrides);
 
             let balance = loan.principal;
             for (let i = schedule.length - 1; i >= 0; i--) {
@@ -2455,6 +2495,7 @@ const App = {
                 document.getElementById('loanTermMonths').value = loan.term_months;
                 document.getElementById('loanPayments').value = loan.payments_per_year;
                 document.getElementById('loanStartDate').value = loan.start_date;
+                document.getElementById('loanFirstPaymentDate').value = loan.first_payment_date || '';
                 document.getElementById('loanNotes').value = loan.notes || '';
                 document.getElementById('loanConfigModalTitle').textContent = 'Edit Loan';
             }
@@ -2473,6 +2514,7 @@ const App = {
         const termMonths = parseInt(document.getElementById('loanTermMonths').value);
         const payments = parseInt(document.getElementById('loanPayments').value);
         const startDate = document.getElementById('loanStartDate').value;
+        const firstPaymentDate = document.getElementById('loanFirstPaymentDate').value || null;
         const notes = document.getElementById('loanNotes').value.trim();
         const editingId = document.getElementById('editingLoanId').value;
 
@@ -2481,7 +2523,7 @@ const App = {
             return;
         }
 
-        const params = { name, principal, annual_rate: rate, term_months: termMonths, payments_per_year: payments, start_date: startDate, notes };
+        const params = { name, principal, annual_rate: rate, term_months: termMonths, payments_per_year: payments, start_date: startDate, first_payment_date: firstPaymentDate, notes };
 
         if (editingId) {
             Database.updateLoan(parseInt(editingId), params);

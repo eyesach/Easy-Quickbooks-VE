@@ -139,6 +139,7 @@ const Database = {
                 term_months INTEGER NOT NULL,
                 payments_per_year INTEGER NOT NULL DEFAULT 12,
                 start_date DATE NOT NULL,
+                first_payment_date DATE,
                 notes TEXT,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -149,6 +150,15 @@ const Database = {
             CREATE TABLE IF NOT EXISTS loan_skipped_payments (
                 loan_id INTEGER NOT NULL,
                 payment_number INTEGER NOT NULL,
+                PRIMARY KEY(loan_id, payment_number)
+            )
+        `);
+
+        this.db.run(`
+            CREATE TABLE IF NOT EXISTS loan_payment_overrides (
+                loan_id INTEGER NOT NULL,
+                payment_number INTEGER NOT NULL,
+                override_amount DECIMAL(10,2) NOT NULL,
                 PRIMARY KEY(loan_id, payment_number)
             )
         `);
@@ -385,6 +395,23 @@ const Database = {
                 PRIMARY KEY(loan_id, payment_number)
             )
         `);
+
+        // === Create loan_payment_overrides table ===
+        this.db.run(`
+            CREATE TABLE IF NOT EXISTS loan_payment_overrides (
+                loan_id INTEGER NOT NULL,
+                payment_number INTEGER NOT NULL,
+                override_amount DECIMAL(10,2) NOT NULL,
+                PRIMARY KEY(loan_id, payment_number)
+            )
+        `);
+
+        // === Add first_payment_date column to loans if missing ===
+        try {
+            this.db.exec("SELECT first_payment_date FROM loans LIMIT 1");
+        } catch (e) {
+            this.db.run("ALTER TABLE loans ADD COLUMN first_payment_date DATE");
+        }
     },
 
     // ==================== FOLDER OPERATIONS ====================
@@ -1282,9 +1309,9 @@ const Database = {
      */
     addLoan(params) {
         this.db.run(
-            `INSERT INTO loans (name, principal, annual_rate, term_months, payments_per_year, start_date, notes)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [params.name.trim(), params.principal, params.annual_rate, params.term_months, params.payments_per_year || 12, params.start_date, params.notes || null]
+            `INSERT INTO loans (name, principal, annual_rate, term_months, payments_per_year, start_date, first_payment_date, notes)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [params.name.trim(), params.principal, params.annual_rate, params.term_months, params.payments_per_year || 12, params.start_date, params.first_payment_date || null, params.notes || null]
         );
         const result = this.db.exec('SELECT last_insert_rowid() as id');
         this.autoSave();
@@ -1299,19 +1326,20 @@ const Database = {
     updateLoan(id, params) {
         this.db.run(
             `UPDATE loans SET name = ?, principal = ?, annual_rate = ?, term_months = ?,
-             payments_per_year = ?, start_date = ?, notes = ? WHERE id = ?`,
-            [params.name.trim(), params.principal, params.annual_rate, params.term_months, params.payments_per_year || 12, params.start_date, params.notes || null, id]
+             payments_per_year = ?, start_date = ?, first_payment_date = ?, notes = ? WHERE id = ?`,
+            [params.name.trim(), params.principal, params.annual_rate, params.term_months, params.payments_per_year || 12, params.start_date, params.first_payment_date || null, params.notes || null, id]
         );
         this.autoSave();
     },
 
     /**
-     * Soft-delete a loan
+     * Permanently delete a loan and all associated data
      * @param {number} id - Loan ID
      */
     deleteLoan(id) {
-        this.db.run('UPDATE loans SET is_active = 0 WHERE id = ?', [id]);
+        this.db.run('DELETE FROM loans WHERE id = ?', [id]);
         this.db.run('DELETE FROM loan_skipped_payments WHERE loan_id = ?', [id]);
+        this.db.run('DELETE FROM loan_payment_overrides WHERE loan_id = ?', [id]);
         this.autoSave();
     },
 
@@ -1348,6 +1376,38 @@ const Database = {
     },
 
     /**
+     * Get all payment overrides for a loan
+     * @param {number} loanId
+     * @returns {Object} Map of paymentNumber => override_amount
+     */
+    getLoanPaymentOverrides(loanId) {
+        const results = this.db.exec('SELECT payment_number, override_amount FROM loan_payment_overrides WHERE loan_id = ?', [loanId]);
+        const map = {};
+        if (results.length > 0) {
+            results[0].values.forEach(([num, amt]) => { map[num] = amt; });
+        }
+        return map;
+    },
+
+    /**
+     * Set or remove a payment override
+     * @param {number} loanId
+     * @param {number} paymentNumber
+     * @param {number|null} amount - null to remove override
+     */
+    setLoanPaymentOverride(loanId, paymentNumber, amount) {
+        if (amount === null || amount === undefined) {
+            this.db.run('DELETE FROM loan_payment_overrides WHERE loan_id = ? AND payment_number = ?', [loanId, paymentNumber]);
+        } else {
+            this.db.run(
+                'INSERT OR REPLACE INTO loan_payment_overrides (loan_id, payment_number, override_amount) VALUES (?, ?, ?)',
+                [loanId, paymentNumber, amount]
+            );
+        }
+        this.autoSave();
+    },
+
+    /**
      * Get aggregated loan interest by month across all active loans.
      * @param {string|null} asOfMonth - If provided, only returns months <= asOfMonth
      * @returns {Object} Map of { [YYYY-MM]: totalInterest }
@@ -1358,13 +1418,15 @@ const Database = {
 
         loans.forEach(loan => {
             const skipped = this.getSkippedPayments(loan.id);
+            const overrides = this.getLoanPaymentOverrides(loan.id);
             const schedule = Utils.computeAmortizationSchedule({
                 principal: loan.principal,
                 annual_rate: loan.annual_rate,
                 term_months: loan.term_months,
                 payments_per_year: loan.payments_per_year,
-                start_date: loan.start_date
-            }, skipped);
+                start_date: loan.start_date,
+                first_payment_date: loan.first_payment_date
+            }, skipped, overrides);
 
             schedule.forEach(entry => {
                 if (asOfMonth && entry.month > asOfMonth) return;

@@ -2091,6 +2091,23 @@ body {
     color: var(--color-primary);
 }
 
+.loan-payment-cell {
+    cursor: pointer;
+}
+
+.loan-payment-cell:hover {
+    background: rgba(var(--color-primary-rgb), 0.08);
+}
+
+.loan-payment-overridden .loan-payment-cell {
+    font-style: italic;
+}
+
+.loan-payment-overridden .loan-payment-cell::after {
+    content: ' *';
+    color: var(--color-text-muted);
+}
+
 /* Sales Tax badge */
 .category-badge.sales-tax {
     background-color: #e0f2f1;

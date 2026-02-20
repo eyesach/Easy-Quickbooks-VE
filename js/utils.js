@@ -491,13 +491,13 @@ const Utils = {
 
     /**
      * Compute a full amortization schedule from loan config.
-     * Accepts { principal, annual_rate, term_months, payments_per_year, start_date }.
-     * Backward compat: if term_years is provided instead of term_months, auto-convert.
+     * Accepts { principal, annual_rate, term_months, payments_per_year, start_date, first_payment_date }.
      * @param {Object} config - Loan configuration
      * @param {Set} [skippedPayments] - Set of payment numbers to skip
+     * @param {Object} [paymentOverrides] - Map of paymentNumber => override_amount
      * @returns {Array} Array of payment objects
      */
-    computeAmortizationSchedule(config, skippedPayments) {
+    computeAmortizationSchedule(config, skippedPayments, paymentOverrides) {
         const { principal, annual_rate, payments_per_year, start_date } = config;
         const termMonths = config.term_months || (config.term_years ? config.term_years * 12 : 0);
         const termYears = termMonths / 12;
@@ -516,6 +516,11 @@ const Utils = {
 
         const schedule = [];
         let balance = round2(principal);
+
+        // Use first_payment_date if provided, otherwise default to start_date + 1 period
+        const baseDate = config.first_payment_date
+            ? new Date(config.first_payment_date + 'T00:00:00')
+            : null;
         const startDate = new Date(start_date + 'T00:00:00');
         const monthsBetween = 12 / payments_per_year;
 
@@ -523,8 +528,15 @@ const Utils = {
             const interest = round2(balance * periodicRate);
             const isSkipped = skippedPayments && skippedPayments.has(i);
 
-            const paymentDate = new Date(startDate);
-            paymentDate.setMonth(paymentDate.getMonth() + Math.round(monthsBetween * i));
+            let paymentDate;
+            if (baseDate) {
+                // First payment at first_payment_date, subsequent payments spaced from there
+                paymentDate = new Date(baseDate);
+                paymentDate.setMonth(paymentDate.getMonth() + Math.round(monthsBetween * (i - 1)));
+            } else {
+                paymentDate = new Date(startDate);
+                paymentDate.setMonth(paymentDate.getMonth() + Math.round(monthsBetween * i));
+            }
             const month = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
 
             if (isSkipped) {
@@ -540,17 +552,15 @@ const Utils = {
                     skipped: true
                 });
             } else {
-                let principalPart = round2(payment - interest);
+                // Check for payment override
+                const hasOverride = paymentOverrides && (i in paymentOverrides);
+                const actualPayment = hasOverride ? paymentOverrides[i] : ((i === totalPayments) ? round2(balance + interest) : payment);
 
-                // Last non-skipped payment or final payment: zero out balance
-                if (i === totalPayments) {
-                    principalPart = balance;
-                }
+                let principalPart = round2(actualPayment - interest);
+                if (principalPart < 0) principalPart = 0;
 
                 balance = round2(balance - principalPart);
                 if (balance < 0.01) balance = 0;
-
-                const actualPayment = (i === totalPayments) ? round2(principalPart + interest) : payment;
 
                 schedule.push({
                     number: i,
@@ -559,7 +569,8 @@ const Utils = {
                     principal: principalPart,
                     interest: interest,
                     ending_balance: balance,
-                    skipped: false
+                    skipped: false,
+                    overridden: hasOverride
                 });
             }
         }
