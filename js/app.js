@@ -8,8 +8,10 @@ const App = {
     deleteFolderTargetId: null,
     deleteAssetTargetId: null,
     deleteLoanTargetId: null,
+    deleteBudgetExpenseTargetId: null,
     selectedAssetId: null,
     selectedLoanId: null,
+    selectedBudgetExpenseId: null,
     folderCreatedFromCategory: false,
     pendingFileLoad: null,
     savedFileHandle: null,
@@ -103,6 +105,11 @@ const App = {
         const loanTab = document.getElementById('loanTab');
         if (loanTab && loanTab.style.display !== 'none') {
             this.refreshLoans();
+        }
+        // Refresh Budget tab if visible
+        const budgetTab = document.getElementById('budgetTab');
+        if (budgetTab && budgetTab.style.display !== 'none') {
+            this.refreshBudget();
         }
     },
 
@@ -591,7 +598,7 @@ const App = {
             btn.classList.toggle('active', btn.dataset.tab === tab);
         });
 
-        const tabs = ['journalTab', 'cashflowTab', 'pnlTab', 'balancesheetTab', 'assetsTab', 'loanTab'];
+        const tabs = ['journalTab', 'cashflowTab', 'pnlTab', 'balancesheetTab', 'assetsTab', 'loanTab', 'budgetTab'];
         tabs.forEach(id => {
             const el = document.getElementById(id);
             if (el) el.style.display = 'none';
@@ -612,6 +619,9 @@ const App = {
         } else if (tab === 'loan') {
             document.getElementById('loanTab').style.display = 'block';
             this.refreshLoans();
+        } else if (tab === 'budget') {
+            document.getElementById('budgetTab').style.display = 'block';
+            this.refreshBudget();
         } else {
             document.getElementById('journalTab').style.display = 'block';
         }
@@ -1276,6 +1286,7 @@ const App = {
                 UI.hideModal('resetAllDataModal');
                 this.selectedLoanId = null;
                 this.selectedAssetId = null;
+                this.selectedBudgetExpenseId = null;
                 this._timeline = null;
                 this.refreshAll();
                 this.loadAndApplyTimeline();
@@ -1354,6 +1365,52 @@ const App = {
                 if (ke.key === 'Enter') { ke.preventDefault(); input.blur(); }
                 else if (ke.key === 'Escape') { ke.preventDefault(); this.refreshLoans(); }
             });
+        });
+
+        // ==================== BUDGET TAB ====================
+
+        document.getElementById('addBudgetExpenseBtn').addEventListener('click', () => this.openBudgetExpenseModal());
+        document.getElementById('budgetExpenseForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleSaveBudgetExpense();
+        });
+        document.getElementById('cancelBudgetExpenseBtn').addEventListener('click', () => UI.hideModal('budgetExpenseModal'));
+
+        // Delete budget expense modal
+        document.getElementById('confirmDeleteBudgetExpenseBtn').addEventListener('click', () => this.confirmDeleteBudgetExpense());
+        document.getElementById('cancelDeleteBudgetExpenseBtn').addEventListener('click', () => {
+            UI.hideModal('deleteBudgetExpenseModal');
+            this.deleteBudgetExpenseTargetId = null;
+        });
+
+        // Budget list panel click delegation
+        document.getElementById('budgetListPanel').addEventListener('click', (e) => {
+            const editBtn = e.target.closest('.edit-budget-btn');
+            const deleteBtn = e.target.closest('.delete-budget-btn');
+            const item = e.target.closest('.budget-list-item');
+            if (editBtn) {
+                this.handleEditBudgetExpense(parseInt(editBtn.dataset.id));
+                return;
+            }
+            if (deleteBtn) {
+                this.handleDeleteBudgetExpense(parseInt(deleteBtn.dataset.id));
+                return;
+            }
+            if (item) {
+                this.selectedBudgetExpenseId = parseInt(item.dataset.id);
+                this.refreshBudget();
+            }
+        });
+
+        // Record budget to journal
+        document.getElementById('recordBudgetBtn').addEventListener('click', () => this.openRecordBudgetModal());
+        document.getElementById('cancelRecordBudgetBtn').addEventListener('click', () => UI.hideModal('recordBudgetModal'));
+        document.getElementById('confirmRecordBudgetBtn').addEventListener('click', () => this.confirmRecordBudget());
+        document.getElementById('recordBudgetMonth').addEventListener('change', () => this.updateRecordBudgetPreview());
+        document.getElementById('recordBudgetYear').addEventListener('change', () => this.updateRecordBudgetPreview());
+        document.getElementById('recordBudgetStatus').addEventListener('change', () => {
+            const status = document.getElementById('recordBudgetStatus').value;
+            document.getElementById('recordBudgetDateProcessedGroup').style.display = status !== 'pending' ? '' : 'none';
         });
 
         // ==================== MODALS & KEYBOARD ====================
@@ -2587,6 +2644,285 @@ const App = {
         }
         UI.hideModal('deleteLoanModal');
         this.deleteLoanTargetId = null;
+    },
+
+    // ==================== BUDGET HANDLERS ====================
+
+    refreshBudget() {
+        const expenses = Database.getBudgetExpenses();
+        UI.renderBudgetTab(expenses, this.selectedBudgetExpenseId);
+    },
+
+    openBudgetExpenseModal(editId) {
+        document.getElementById('budgetExpenseForm').reset();
+        document.getElementById('editingBudgetExpenseId').value = '';
+        document.getElementById('budgetExpenseModalTitle').textContent = 'Add Budget Expense';
+        document.getElementById('saveBudgetExpenseBtn').textContent = 'Add Expense';
+
+        // Populate category dropdown
+        const catSelect = document.getElementById('budgetExpenseCategory');
+        catSelect.innerHTML = '<option value="">None (won\'t record)</option>';
+        const categories = Database.getCategories();
+        categories.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.id;
+            opt.textContent = cat.folder_name ? `${cat.folder_name} / ${cat.name}` : cat.name;
+            catSelect.appendChild(opt);
+        });
+
+        // Populate year dropdowns
+        this._populateBudgetYearDropdowns();
+
+        if (!editId) {
+            const [year, month] = Utils.getCurrentMonth().split('-');
+            document.getElementById('budgetStartMonth').value = month;
+            document.getElementById('budgetStartYear').value = year;
+        }
+
+        UI.showModal('budgetExpenseModal');
+        document.getElementById('budgetExpenseName').focus();
+    },
+
+    _populateBudgetYearDropdowns() {
+        const yearOptions = Utils.generateYearOptions();
+        const placeholders = { budgetStartYear: 'Year...', budgetEndYear: '\u2014' };
+        ['budgetStartYear', 'budgetEndYear'].forEach(id => {
+            const sel = document.getElementById(id);
+            const currentVal = sel.value;
+            sel.innerHTML = `<option value="">${placeholders[id]}</option>`;
+            yearOptions.forEach(y => {
+                const opt = document.createElement('option');
+                opt.value = y;
+                opt.textContent = y;
+                sel.appendChild(opt);
+            });
+            if (currentVal) sel.value = currentVal;
+        });
+    },
+
+    handleSaveBudgetExpense() {
+        const name = document.getElementById('budgetExpenseName').value.trim();
+        const amount = parseFloat(document.getElementById('budgetExpenseAmount').value);
+        const startMonth = document.getElementById('budgetStartMonth').value;
+        const startYear = document.getElementById('budgetStartYear').value;
+        const endMonth = document.getElementById('budgetEndMonth').value;
+        const endYear = document.getElementById('budgetEndYear').value;
+        const categoryId = document.getElementById('budgetExpenseCategory').value || null;
+        const notes = document.getElementById('budgetExpenseNotes').value.trim() || null;
+        const editingId = document.getElementById('editingBudgetExpenseId').value;
+
+        if (!name || isNaN(amount) || amount <= 0) {
+            UI.showNotification('Please enter a name and valid amount', 'error');
+            return;
+        }
+        if (!startMonth || !startYear) {
+            UI.showNotification('Please select a start month', 'error');
+            return;
+        }
+
+        const start = `${startYear}-${startMonth}`;
+
+        if ((endMonth && !endYear) || (!endMonth && endYear)) {
+            UI.showNotification('Please select both an end month and year, or leave both blank', 'error');
+            return;
+        }
+
+        const end = (endMonth && endYear) ? `${endYear}-${endMonth}` : null;
+
+        if (end && end < start) {
+            UI.showNotification('End month cannot be before start month', 'error');
+            return;
+        }
+
+        try {
+            if (editingId) {
+                Database.updateBudgetExpense(parseInt(editingId), name, amount, start, end, categoryId ? parseInt(categoryId) : null, notes);
+                UI.showNotification('Expense updated', 'success');
+            } else {
+                const id = Database.addBudgetExpense(name, amount, start, end, categoryId ? parseInt(categoryId) : null, notes);
+                this.selectedBudgetExpenseId = id;
+                UI.showNotification('Expense added', 'success');
+            }
+            UI.hideModal('budgetExpenseModal');
+            this.refreshBudget();
+        } catch (error) {
+            console.error('Error saving budget expense:', error);
+            UI.showNotification('Failed to save expense', 'error');
+        }
+    },
+
+    handleEditBudgetExpense(id) {
+        const expense = Database.getBudgetExpenseById(id);
+        if (!expense) return;
+
+        this.openBudgetExpenseModal(id);
+        document.getElementById('editingBudgetExpenseId').value = expense.id;
+        document.getElementById('budgetExpenseName').value = expense.name;
+        document.getElementById('budgetExpenseAmount').value = expense.monthly_amount;
+        document.getElementById('budgetExpenseCategory').value = expense.category_id || '';
+        document.getElementById('budgetExpenseNotes').value = expense.notes || '';
+        document.getElementById('budgetExpenseModalTitle').textContent = 'Edit Budget Expense';
+        document.getElementById('saveBudgetExpenseBtn').textContent = 'Save Changes';
+
+        const [startYear, startMo] = expense.start_month.split('-');
+        document.getElementById('budgetStartMonth').value = startMo;
+        document.getElementById('budgetStartYear').value = startYear;
+
+        if (expense.end_month) {
+            const [endYear, endMo] = expense.end_month.split('-');
+            document.getElementById('budgetEndMonth').value = endMo;
+            document.getElementById('budgetEndYear').value = endYear;
+        }
+    },
+
+    handleDeleteBudgetExpense(id) {
+        this.deleteBudgetExpenseTargetId = id;
+        UI.showModal('deleteBudgetExpenseModal');
+    },
+
+    confirmDeleteBudgetExpense() {
+        if (this.deleteBudgetExpenseTargetId) {
+            Database.deleteBudgetExpense(this.deleteBudgetExpenseTargetId);
+            if (this.selectedBudgetExpenseId === this.deleteBudgetExpenseTargetId) {
+                this.selectedBudgetExpenseId = null;
+            }
+            UI.showNotification('Expense deleted', 'success');
+            this.refreshBudget();
+        }
+        UI.hideModal('deleteBudgetExpenseModal');
+        this.deleteBudgetExpenseTargetId = null;
+    },
+
+    openRecordBudgetModal() {
+        const expenses = Database.getBudgetExpenses();
+        if (expenses.length === 0) {
+            UI.showNotification('No budget expenses to record', 'error');
+            return;
+        }
+
+        // Populate year dropdown
+        const yearSel = document.getElementById('recordBudgetYear');
+        const yearOptions = Utils.generateYearOptions();
+        yearSel.innerHTML = '<option value="">Year...</option>';
+        yearOptions.forEach(y => {
+            const opt = document.createElement('option');
+            opt.value = y;
+            opt.textContent = y;
+            yearSel.appendChild(opt);
+        });
+
+        // Set defaults to current month
+        const [curYear, curMonth] = Utils.getCurrentMonth().split('-');
+        document.getElementById('recordBudgetMonth').value = curMonth;
+        yearSel.value = curYear;
+        document.getElementById('recordBudgetDate').value = Utils.getTodayDate();
+        document.getElementById('recordBudgetStatus').value = 'pending';
+        document.getElementById('recordBudgetDateProcessedGroup').style.display = 'none';
+        document.getElementById('recordBudgetDateProcessed').value = '';
+
+        this.updateRecordBudgetPreview();
+        UI.showModal('recordBudgetModal');
+    },
+
+    updateRecordBudgetPreview() {
+        const month = document.getElementById('recordBudgetMonth').value;
+        const year = document.getElementById('recordBudgetYear').value;
+        const preview = document.getElementById('recordBudgetPreview');
+        const confirmBtn = document.getElementById('confirmRecordBudgetBtn');
+
+        if (!month || !year) {
+            preview.innerHTML = '<p class="empty-state">Select a month to see active expenses.</p>';
+            confirmBtn.disabled = true;
+            return;
+        }
+
+        const targetMonth = `${year}-${month}`;
+        const activeExpenses = Database.getActiveBudgetExpensesForMonth(targetMonth);
+
+        if (activeExpenses.length === 0) {
+            preview.innerHTML = '<p class="empty-state">No active expenses for this month.</p>';
+            confirmBtn.disabled = true;
+            return;
+        }
+
+        const withCategory = activeExpenses.filter(e => e.category_id);
+        const withoutCategory = activeExpenses.filter(e => !e.category_id);
+
+        let html = '<div class="bulk-preview-list">';
+        html += `<div class="bulk-preview-header">${activeExpenses.length} active expense${activeExpenses.length > 1 ? 's' : ''} for ${Utils.formatMonthShort(targetMonth)}</div>`;
+
+        activeExpenses.forEach(exp => {
+            const catLabel = exp.category_name
+                ? `<span class="type-badge type-payable">${Utils.escapeHtml(exp.category_name)}</span>`
+                : '<span class="type-badge type-none">No category</span>';
+            html += `<div class="bulk-preview-item">
+                <span class="bulk-preview-name">${Utils.escapeHtml(exp.name)}</span>
+                ${catLabel}
+                <span class="bulk-preview-amount">${Utils.formatCurrency(exp.monthly_amount)}</span>
+            </div>`;
+        });
+
+        const total = activeExpenses.reduce((sum, e) => sum + e.monthly_amount, 0);
+        html += `<div class="bulk-preview-total">Total: ${Utils.formatCurrency(total)}</div>`;
+
+        if (withoutCategory.length > 0) {
+            html += `<div class="bulk-preview-warning">${withoutCategory.length} expense${withoutCategory.length > 1 ? 's' : ''} without a category will be skipped.</div>`;
+        }
+
+        html += '</div>';
+        preview.innerHTML = html;
+        confirmBtn.disabled = withCategory.length === 0;
+    },
+
+    confirmRecordBudget() {
+        const month = document.getElementById('recordBudgetMonth').value;
+        const year = document.getElementById('recordBudgetYear').value;
+        const entryDate = document.getElementById('recordBudgetDate').value;
+        const status = document.getElementById('recordBudgetStatus').value;
+        const dateProcessed = document.getElementById('recordBudgetDateProcessed').value || null;
+
+        if (!month || !year || !entryDate) {
+            UI.showNotification('Please fill in all required fields', 'error');
+            return;
+        }
+
+        const targetMonth = `${year}-${month}`;
+        const activeExpenses = Database.getActiveBudgetExpensesForMonth(targetMonth);
+        const recordable = activeExpenses.filter(e => e.category_id);
+
+        if (recordable.length === 0) {
+            UI.showNotification('No expenses with categories to record', 'error');
+            return;
+        }
+
+        let count = 0;
+        try {
+            recordable.forEach(exp => {
+                Database.addTransaction({
+                    entry_date: entryDate,
+                    category_id: exp.category_id,
+                    item_description: exp.name,
+                    amount: exp.monthly_amount,
+                    transaction_type: 'payable',
+                    status: status,
+                    date_processed: status !== 'pending' ? dateProcessed : null,
+                    month_due: targetMonth,
+                    month_paid: status !== 'pending' ? entryDate.substring(0, 7) : null,
+                    payment_for_month: targetMonth,
+                    notes: null,
+                    source_type: 'budget',
+                    source_id: exp.id
+                });
+                count++;
+            });
+
+            UI.hideModal('recordBudgetModal');
+            this.refreshAll();
+            UI.showNotification(`${count} budget entr${count === 1 ? 'y' : 'ies'} recorded to journal`, 'success');
+        } catch (error) {
+            console.error('Error recording budget entries:', error);
+            UI.showNotification('Failed to record entries', 'error');
+        }
     },
 
     // ==================== EXPORT ====================

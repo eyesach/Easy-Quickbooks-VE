@@ -1482,6 +1482,114 @@ const UI = {
     },
 
     /**
+     * Render the Budget tab with list/detail layout
+     * @param {Array} expenses - Array of budget expense objects
+     * @param {number|null} selectedExpenseId - Currently selected expense ID
+     */
+    renderBudgetTab(expenses, selectedExpenseId) {
+        const fmtAmt = (amt) => Utils.formatCurrency(amt);
+        const currentMonth = Utils.getCurrentMonth();
+
+        // Count active expenses and compute totals
+        let activeCount = 0;
+        let totalMonthly = 0;
+        expenses.forEach(exp => {
+            if (exp.start_month <= currentMonth && (!exp.end_month || exp.end_month >= currentMonth)) {
+                activeCount++;
+                totalMonthly += exp.monthly_amount;
+            }
+        });
+
+        const summaryContainer = document.getElementById('budgetSummaryCards');
+        summaryContainer.innerHTML = `
+            <div class="budget-summary-card"><span class="budget-summary-label">Monthly Total</span><span class="budget-summary-value">${fmtAmt(totalMonthly)}</span></div>
+            <div class="budget-summary-card"><span class="budget-summary-label">Active Expenses</span><span class="budget-summary-value">${activeCount}</span></div>
+            <div class="budget-summary-card"><span class="budget-summary-label">Annual Estimate</span><span class="budget-summary-value">${fmtAmt(totalMonthly * 12)}</span></div>
+        `;
+
+        // Left panel: expense list
+        const listPanel = document.getElementById('budgetListPanel');
+        if (expenses.length === 0) {
+            listPanel.innerHTML = '<p class="empty-state">No budget expenses yet. Click "+ Add Expense" to begin.</p>';
+        } else {
+            listPanel.innerHTML = expenses.map(exp => {
+                const selected = exp.id === selectedExpenseId ? ' selected' : '';
+                const isActive = exp.start_month <= currentMonth && (!exp.end_month || exp.end_month >= currentMonth);
+                const statusClass = isActive ? 'budget-active' : 'budget-inactive';
+                return `<div class="budget-list-item${selected}" data-id="${exp.id}">
+                    <div class="budget-list-name">${Utils.escapeHtml(exp.name)}</div>
+                    <div class="budget-list-meta">${fmtAmt(exp.monthly_amount)} &middot; <span class="${statusClass}">${isActive ? 'Active' : 'Inactive'}</span></div>
+                    <div class="budget-list-actions">
+                        <button class="btn-icon edit-budget-btn" data-id="${exp.id}" title="Edit">&#9998;</button>
+                        <button class="btn-icon delete-budget-btn" data-id="${exp.id}" title="Delete">&times;</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // Right panel: selected expense detail
+        const detailPanel = document.getElementById('budgetDetailPanel');
+        const selectedExpense = expenses.find(e => e.id === selectedExpenseId);
+        if (!selectedExpense) {
+            detailPanel.innerHTML = '<p class="empty-state">Select an expense to view its payment schedule.</p>';
+            return;
+        }
+
+        // Generate month schedule
+        const startMonth = selectedExpense.start_month;
+        const endMonth = selectedExpense.end_month;
+        // Show up to 24 months from start (or until end_month if set)
+        const months = [];
+        let m = startMonth;
+        const maxMonths = 24;
+        for (let i = 0; i < maxMonths; i++) {
+            if (endMonth && m > endMonth) break;
+            months.push(m);
+            m = Utils.nextMonth(m);
+        }
+
+        let html = `<div class="budget-detail-header">
+            <h4>${Utils.escapeHtml(selectedExpense.name)}</h4>
+            <div class="budget-detail-meta">
+                <span>Amount: ${fmtAmt(selectedExpense.monthly_amount)}/mo</span>
+                <span>Start: ${Utils.formatMonthShort(selectedExpense.start_month)}</span>
+                <span>End: ${selectedExpense.end_month ? Utils.formatMonthShort(selectedExpense.end_month) : 'Indefinite'}</span>
+                ${selectedExpense.category_name ? `<span>Category: ${Utils.escapeHtml(selectedExpense.category_name)}</span>` : ''}
+            </div>
+        </div>`;
+
+        html += '<div class="budget-schedule-wrapper"><table class="budget-schedule-table"><thead><tr>';
+        html += '<th>Month</th><th>Amount</th><th>Cumulative</th>';
+        html += '</tr></thead><tbody>';
+
+        let cumulative = 0;
+        months.forEach(month => {
+            cumulative += selectedExpense.monthly_amount;
+            const isCurrent = month === currentMonth;
+            html += `<tr${isCurrent ? ' class="budget-current-month"' : ''}>
+                <td>${Utils.formatMonthShort(month)}</td>
+                <td>${fmtAmt(selectedExpense.monthly_amount)}</td>
+                <td>${fmtAmt(cumulative)}</td>
+            </tr>`;
+        });
+
+        const hitMaxCap = months.length === maxMonths && (!endMonth || m <= endMonth);
+        if (!endMonth) {
+            html += `<tr class="budget-continues-row"><td colspan="3">Continues indefinitely...</td></tr>`;
+        } else if (hitMaxCap) {
+            html += `<tr class="budget-continues-row"><td colspan="3">Showing first ${maxMonths} months \u2014 ends ${Utils.formatMonthShort(endMonth)}</td></tr>`;
+        }
+
+        html += '</tbody></table></div>';
+
+        if (selectedExpense.notes) {
+            html += `<div class="budget-detail-notes">Notes: ${Utils.escapeHtml(selectedExpense.notes)}</div>`;
+        }
+
+        detailPanel.innerHTML = html;
+    },
+
+    /**
      * Generate CSV string from transaction data
      * @param {Array} transactions - Array of transaction objects for export
      * @returns {string} CSV string

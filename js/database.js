@@ -173,6 +173,20 @@ const Database = {
             )
         `);
 
+        this.db.run(`
+            CREATE TABLE IF NOT EXISTS budget_expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                monthly_amount DECIMAL(10,2) NOT NULL,
+                start_month TEXT NOT NULL,
+                end_month TEXT,
+                category_id INTEGER,
+                notes TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (category_id) REFERENCES categories(id)
+            )
+        `);
+
         // Create default "Monthly Expenses" folder
         this.db.run('INSERT OR IGNORE INTO category_folders (name, folder_type, sort_order) VALUES (?, ?, ?)', ['Monthly Expenses', 'payable', 0]);
 
@@ -422,6 +436,21 @@ const Database = {
         } catch (e) {
             this.db.run("ALTER TABLE loans ADD COLUMN first_payment_date DATE");
         }
+
+        // === Create budget_expenses table ===
+        this.db.run(`
+            CREATE TABLE IF NOT EXISTS budget_expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                monthly_amount DECIMAL(10,2) NOT NULL,
+                start_month TEXT NOT NULL,
+                end_month TEXT,
+                category_id INTEGER,
+                notes TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (category_id) REFERENCES categories(id)
+            )
+        `);
     },
 
     // ==================== FOLDER OPERATIONS ====================
@@ -1446,6 +1475,103 @@ const Database = {
         });
 
         return result;
+    },
+
+    // ==================== BUDGET EXPENSES ====================
+
+    /**
+     * Get all budget expenses
+     * @returns {Array} Array of budget expense objects
+     */
+    getBudgetExpenses() {
+        const results = this.db.exec(`
+            SELECT be.*, c.name as category_name
+            FROM budget_expenses be
+            LEFT JOIN categories c ON be.category_id = c.id
+            ORDER BY be.start_month ASC, be.name ASC
+        `);
+        if (results.length === 0) return [];
+        return this.rowsToObjects(results[0]);
+    },
+
+    /**
+     * Get a budget expense by ID
+     * @param {number} id
+     * @returns {Object|null}
+     */
+    getBudgetExpenseById(id) {
+        const results = this.db.exec(`
+            SELECT be.*, c.name as category_name
+            FROM budget_expenses be
+            LEFT JOIN categories c ON be.category_id = c.id
+            WHERE be.id = ?
+        `, [id]);
+        if (results.length === 0) return null;
+        return this.rowsToObjects(results[0])[0];
+    },
+
+    /**
+     * Add a budget expense
+     * @param {string} name
+     * @param {number} monthlyAmount
+     * @param {string} startMonth - YYYY-MM
+     * @param {string|null} endMonth - YYYY-MM or null for indefinite
+     * @param {number|null} categoryId - FK to categories
+     * @param {string|null} notes
+     * @returns {number} New ID
+     */
+    addBudgetExpense(name, monthlyAmount, startMonth, endMonth = null, categoryId = null, notes = null) {
+        this.db.run(
+            'INSERT INTO budget_expenses (name, monthly_amount, start_month, end_month, category_id, notes) VALUES (?, ?, ?, ?, ?, ?)',
+            [name.trim(), monthlyAmount, startMonth, endMonth || null, categoryId || null, notes || null]
+        );
+        const result = this.db.exec('SELECT last_insert_rowid() as id');
+        this.autoSave();
+        return result[0].values[0][0];
+    },
+
+    /**
+     * Update a budget expense
+     * @param {number} id
+     * @param {string} name
+     * @param {number} monthlyAmount
+     * @param {string} startMonth
+     * @param {string|null} endMonth
+     * @param {number|null} categoryId
+     * @param {string|null} notes
+     */
+    updateBudgetExpense(id, name, monthlyAmount, startMonth, endMonth = null, categoryId = null, notes = null) {
+        this.db.run(
+            'UPDATE budget_expenses SET name = ?, monthly_amount = ?, start_month = ?, end_month = ?, category_id = ?, notes = ? WHERE id = ?',
+            [name.trim(), monthlyAmount, startMonth, endMonth || null, categoryId || null, notes || null, id]
+        );
+        this.autoSave();
+    },
+
+    /**
+     * Delete a budget expense
+     * @param {number} id
+     */
+    deleteBudgetExpense(id) {
+        this.db.run('DELETE FROM budget_expenses WHERE id = ?', [id]);
+        this.autoSave();
+    },
+
+    /**
+     * Get active budget expenses for a given month
+     * @param {string} month - YYYY-MM
+     * @returns {Array} Expenses where start_month <= month AND (end_month IS NULL OR end_month >= month)
+     */
+    getActiveBudgetExpensesForMonth(month) {
+        const results = this.db.exec(`
+            SELECT be.*, c.name as category_name
+            FROM budget_expenses be
+            LEFT JOIN categories c ON be.category_id = c.id
+            WHERE be.start_month <= ? AND (be.end_month IS NULL OR be.end_month >= ?)
+            ORDER BY be.name ASC
+        `, [month, month]);
+        if (results.length === 0) return [];
+        return this.rowsToObjects(results[0]);
     },
 
     // ==================== EQUITY & LOAN CONFIG ====================

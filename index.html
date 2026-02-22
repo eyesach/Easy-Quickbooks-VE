@@ -147,6 +147,7 @@
             <button class="main-tab" data-tab="balancesheet">Balance Sheet</button>
             <button class="main-tab" data-tab="assets">Assets &amp; Equity</button>
             <button class="main-tab" data-tab="loan">Loans</button>
+            <button class="main-tab" data-tab="budget">Budget</button>
         </nav>
 
         <!-- Journal Tab -->
@@ -445,6 +446,175 @@
                     </div>
                 </div>
             </section>
+        </div>
+
+        <!-- Budget Tab -->
+        <div id="budgetTab" style="display: none;">
+            <section class="budget-section">
+                <div class="budget-header">
+                    <h3>Monthly Budget</h3>
+                    <div class="budget-controls">
+                        <button id="addBudgetExpenseBtn" class="btn btn-primary btn-small">+ Add Expense</button>
+                        <button id="recordBudgetBtn" class="btn btn-secondary btn-small">Record to Journal</button>
+                    </div>
+                </div>
+                <div id="budgetSummaryCards" class="budget-summary-cards"></div>
+                <div class="budget-layout">
+                    <div id="budgetListPanel" class="budget-list-panel"></div>
+                    <div id="budgetDetailPanel" class="budget-detail-panel">
+                        <p class="empty-state">Select an expense to view its payment schedule.</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Budget Expense Modal -->
+        <div id="budgetExpenseModal" class="modal">
+            <div class="modal-content modal-wide">
+                <h3 id="budgetExpenseModalTitle">Add Budget Expense</h3>
+                <form id="budgetExpenseForm">
+                    <input type="hidden" id="editingBudgetExpenseId" value="">
+                    <div class="form-group">
+                        <label for="budgetExpenseName">Expense Name</label>
+                        <input type="text" id="budgetExpenseName" required placeholder="e.g., Rent, Insurance">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="budgetExpenseAmount">Monthly Amount</label>
+                            <input type="number" id="budgetExpenseAmount" step="0.01" min="0" placeholder="0.00" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="budgetExpenseCategory">Journal Category</label>
+                            <select id="budgetExpenseCategory">
+                                <option value="">None (won't record)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Start Month</label>
+                            <div class="month-year-select">
+                                <select id="budgetStartMonth" required>
+                                    <option value="">Month...</option>
+                                    <option value="01">January</option>
+                                    <option value="02">February</option>
+                                    <option value="03">March</option>
+                                    <option value="04">April</option>
+                                    <option value="05">May</option>
+                                    <option value="06">June</option>
+                                    <option value="07">July</option>
+                                    <option value="08">August</option>
+                                    <option value="09">September</option>
+                                    <option value="10">October</option>
+                                    <option value="11">November</option>
+                                    <option value="12">December</option>
+                                </select>
+                                <select id="budgetStartYear" required>
+                                    <option value="">Year...</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>End Month <span class="label-hint">(optional)</span></label>
+                            <div class="month-year-select">
+                                <select id="budgetEndMonth">
+                                    <option value="">Indefinite</option>
+                                    <option value="01">January</option>
+                                    <option value="02">February</option>
+                                    <option value="03">March</option>
+                                    <option value="04">April</option>
+                                    <option value="05">May</option>
+                                    <option value="06">June</option>
+                                    <option value="07">July</option>
+                                    <option value="08">August</option>
+                                    <option value="09">September</option>
+                                    <option value="10">October</option>
+                                    <option value="11">November</option>
+                                    <option value="12">December</option>
+                                </select>
+                                <select id="budgetEndYear">
+                                    <option value="">—</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="budgetExpenseNotes">Notes</label>
+                        <input type="text" id="budgetExpenseNotes" placeholder="Optional notes">
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="cancelBudgetExpenseBtn" class="btn btn-secondary">Cancel</button>
+                        <button type="submit" id="saveBudgetExpenseBtn" class="btn btn-primary">Add Expense</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Delete Budget Expense Confirmation -->
+        <div id="deleteBudgetExpenseModal" class="modal">
+            <div class="modal-content">
+                <h3>Delete Expense</h3>
+                <p>Are you sure you want to delete this budget expense?</p>
+                <div class="form-actions">
+                    <button type="button" id="cancelDeleteBudgetExpenseBtn" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="confirmDeleteBudgetExpenseBtn" class="btn btn-danger">Delete</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Record Budget to Journal Modal -->
+        <div id="recordBudgetModal" class="modal">
+            <div class="modal-content modal-wide">
+                <h3>Record Budget to Journal</h3>
+                <p class="modal-description">Create journal entries for all active budget expenses for the selected month.</p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Month</label>
+                        <div class="month-year-select">
+                            <select id="recordBudgetMonth" required>
+                                <option value="">Month...</option>
+                                <option value="01">January</option>
+                                <option value="02">February</option>
+                                <option value="03">March</option>
+                                <option value="04">April</option>
+                                <option value="05">May</option>
+                                <option value="06">June</option>
+                                <option value="07">July</option>
+                                <option value="08">August</option>
+                                <option value="09">September</option>
+                                <option value="10">October</option>
+                                <option value="11">November</option>
+                                <option value="12">December</option>
+                            </select>
+                            <select id="recordBudgetYear" required>
+                                <option value="">Year...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="recordBudgetDate">Date Recorded</label>
+                        <input type="date" id="recordBudgetDate" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="recordBudgetStatus">Status</label>
+                        <select id="recordBudgetStatus" required>
+                            <option value="pending">Pending</option>
+                            <option value="paid">Paid</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="recordBudgetDateProcessedGroup" style="display: none;">
+                        <label for="recordBudgetDateProcessed">Date Processed</label>
+                        <input type="date" id="recordBudgetDateProcessed">
+                    </div>
+                </div>
+                <div id="recordBudgetPreview" class="bulk-preview"></div>
+                <div class="form-actions">
+                    <button type="button" id="cancelRecordBudgetBtn" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="confirmRecordBudgetBtn" class="btn btn-primary" disabled>Record Entries</button>
+                </div>
+            </div>
         </div>
 
         <!-- Fixed Asset Modal -->
