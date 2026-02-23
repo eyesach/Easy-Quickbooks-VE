@@ -2279,6 +2279,14 @@ body {
     gap: 4px;
 }
 
+.asset-list-actions .btn-icon {
+    opacity: 0.5;
+}
+
+.asset-list-item:hover .btn-icon {
+    opacity: 1;
+}
+
 .asset-detail-header h4 {
     margin: 0 0 8px 0;
     font-size: 1rem;
