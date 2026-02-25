@@ -1343,41 +1343,49 @@
         <!-- Notes Tooltip (for hover display) -->
         <div id="notesTooltip" class="notes-tooltip"></div>
 
-        <!-- Supabase Config Modal -->
-        <div id="supabaseConfigModal" class="modal">
-            <div class="modal-content">
-                <h3>Supabase Connection</h3>
-                <p style="margin-bottom: 16px; color: var(--color-text-muted); font-size: 0.85rem;">Enter your Supabase project details to enable group sync.</p>
-                <form id="supabaseConfigForm">
-                    <div class="form-group">
-                        <label for="supabaseUrl">Project URL</label>
-                        <input type="url" id="supabaseUrl" class="form-control" required placeholder="https://your-project.supabase.co">
-                    </div>
-                    <div class="form-group">
-                        <label for="supabaseAnonKey">Anon Key</label>
-                        <input type="text" id="supabaseAnonKey" class="form-control" required placeholder="eyJ...">
-                    </div>
-                    <div class="form-actions">
-                        <button type="button" id="cancelSupabaseConfigBtn" class="btn btn-secondary">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Connect</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
         <!-- Sync Menu Modal -->
         <div id="syncMenuModal" class="modal">
             <div class="modal-content">
                 <h3>Group Sync</h3>
                 <div id="syncDisconnectedPanel">
-                    <p style="margin-bottom: 16px; color: var(--color-text-muted); font-size: 0.85rem;">Share this journal with others. Create a group or join an existing one.</p>
-                    <div class="form-group">
-                        <label for="syncUserName">Your Display Name</label>
-                        <input type="text" id="syncUserName" class="form-control" placeholder="e.g., Alice">
+                    <p style="margin-bottom: 12px; color: var(--color-text-muted); font-size: 0.85rem;">Share this journal with others. Create a new group or join an existing one.</p>
+                    <div class="sync-tabs">
+                        <button type="button" class="sync-tab active" data-tab="create">Create</button>
+                        <button type="button" class="sync-tab" data-tab="join">Join</button>
                     </div>
-                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px;">
-                        <button type="button" id="syncCreateGroupBtn" class="btn btn-primary" style="width:100%;">Create Group</button>
-                        <button type="button" id="syncJoinGroupBtn" class="btn btn-secondary" style="width:100%;">Join Group</button>
+                    <div id="syncCreateTab" class="sync-tab-content active">
+                        <form id="createGroupForm">
+                            <div class="form-group">
+                                <label for="syncCreateName">Your Display Name</label>
+                                <input type="text" id="syncCreateName" class="form-control" required placeholder="e.g., Alice">
+                            </div>
+                            <div class="form-group">
+                                <label for="newGroupName">Group Name</label>
+                                <input type="text" id="newGroupName" class="form-control" required placeholder="e.g., Q1 2026 Journal">
+                            </div>
+                            <div class="form-group">
+                                <label for="supabaseUrl">Supabase Project URL</label>
+                                <input type="url" id="supabaseUrl" class="form-control" required placeholder="https://your-project.supabase.co">
+                            </div>
+                            <div class="form-group">
+                                <label for="supabaseAnonKey">Supabase Anon Key</label>
+                                <input type="text" id="supabaseAnonKey" class="form-control" required placeholder="eyJ...">
+                            </div>
+                            <button type="submit" class="btn btn-primary" style="width:100%; margin-top: 4px;">Create Group</button>
+                        </form>
+                    </div>
+                    <div id="syncJoinTab" class="sync-tab-content">
+                        <form id="joinGroupForm">
+                            <div class="form-group">
+                                <label for="syncJoinName">Your Display Name</label>
+                                <input type="text" id="syncJoinName" class="form-control" required placeholder="e.g., Bob">
+                            </div>
+                            <div class="form-group">
+                                <label for="joinGroupCode">Invite Code</label>
+                                <input type="text" id="joinGroupCode" class="form-control" required placeholder="Paste invite code from group creator...">
+                            </div>
+                            <button type="submit" class="btn btn-primary" style="width:100%; margin-top: 4px;">Join Group</button>
+                        </form>
                     </div>
                 </div>
                 <div id="syncConnectedPanel" style="display:none;">
@@ -1387,8 +1395,8 @@
                             <span id="syncGroupName" class="sync-info-value">--</span>
                         </div>
                         <div class="sync-info-row">
-                            <span class="sync-info-label">Group ID</span>
-                            <span id="syncGroupId" class="sync-info-value sync-group-id">--</span>
+                            <span class="sync-info-label">Invite Code</span>
+                            <span id="syncInviteCode" class="sync-info-value sync-group-id" style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">--</span>
                             <button type="button" id="syncCopyIdBtn" class="btn btn-small" title="Copy invite code">Copy</button>
                         </div>
                         <div class="sync-info-row">
@@ -1413,40 +1421,6 @@
                 <div class="form-actions" style="margin-top: 12px;">
                     <button type="button" id="closeSyncMenuBtn" class="btn btn-secondary">Close</button>
                 </div>
-            </div>
-        </div>
-
-        <!-- Create Group Modal -->
-        <div id="createGroupModal" class="modal">
-            <div class="modal-content">
-                <h3>Create Group</h3>
-                <form id="createGroupForm">
-                    <div class="form-group">
-                        <label for="newGroupName">Group Name</label>
-                        <input type="text" id="newGroupName" class="form-control" required placeholder="e.g., Q1 2026 Journal">
-                    </div>
-                    <div class="form-actions">
-                        <button type="button" id="cancelCreateGroupBtn" class="btn btn-secondary">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Create</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- Join Group Modal -->
-        <div id="joinGroupModal" class="modal">
-            <div class="modal-content">
-                <h3>Join Group</h3>
-                <form id="joinGroupForm">
-                    <div class="form-group">
-                        <label for="joinGroupId">Group ID (Invite Code)</label>
-                        <input type="text" id="joinGroupId" class="form-control" required placeholder="Paste group ID...">
-                    </div>
-                    <div class="form-actions">
-                        <button type="button" id="cancelJoinGroupBtn" class="btn btn-secondary">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Join</button>
-                    </div>
-                </form>
             </div>
         </div>
 

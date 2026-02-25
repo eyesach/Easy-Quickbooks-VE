@@ -1534,23 +1534,30 @@ const App = {
             this.openSyncMenu();
         });
 
-        document.getElementById('supabaseConfigForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleSaveSupabaseConfig();
-        });
-        document.getElementById('cancelSupabaseConfigBtn').addEventListener('click', () => {
-            UI.hideModal('supabaseConfigModal');
-        });
-
         document.getElementById('closeSyncMenuBtn').addEventListener('click', () => {
             UI.hideModal('syncMenuModal');
         });
-        document.getElementById('syncCreateGroupBtn').addEventListener('click', () => {
-            this.handleStartCreateGroup();
+
+        // Tab switching
+        document.querySelectorAll('.sync-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.sync-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.sync-tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById('sync' + tab.dataset.tab.charAt(0).toUpperCase() + tab.dataset.tab.slice(1) + 'Tab').classList.add('active');
+            });
         });
-        document.getElementById('syncJoinGroupBtn').addEventListener('click', () => {
-            this.handleStartJoinGroup();
+
+        document.getElementById('createGroupForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleCreateGroup();
         });
+
+        document.getElementById('joinGroupForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleJoinGroup();
+        });
+
         document.getElementById('syncPullBtn').addEventListener('click', () => {
             this.handleSyncPull();
         });
@@ -1561,23 +1568,7 @@ const App = {
             this.handleSyncDisconnect();
         });
         document.getElementById('syncCopyIdBtn').addEventListener('click', () => {
-            this.copyToClipboard(SyncService.groupId);
-        });
-
-        document.getElementById('createGroupForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleCreateGroup();
-        });
-        document.getElementById('cancelCreateGroupBtn').addEventListener('click', () => {
-            UI.hideModal('createGroupModal');
-        });
-
-        document.getElementById('joinGroupForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleJoinGroup();
-        });
-        document.getElementById('cancelJoinGroupBtn').addEventListener('click', () => {
-            UI.hideModal('joinGroupModal');
+            this.copyToClipboard(this._currentInviteCode || '');
         });
 
         document.getElementById('closeGroupCreatedBtn').addEventListener('click', () => {
@@ -4106,69 +4097,57 @@ const App = {
         }
     },
 
-    openSyncMenu() {
-        const supaConfig = Database.getSupabaseConfig();
-        if (!supaConfig || !supaConfig.url) {
-            // Pre-fill if previously saved
-            const existing = Database.getSupabaseConfig();
-            if (existing) {
-                document.getElementById('supabaseUrl').value = existing.url || '';
-                document.getElementById('supabaseAnonKey').value = existing.anonKey || '';
-            }
-            UI.showModal('supabaseConfigModal');
-            return;
-        }
-
-        if (!SupabaseAdapter.isInitialized()) {
-            SupabaseAdapter.init(supaConfig.url, supaConfig.anonKey);
-            SyncService.api = SupabaseAdapter;
-            SyncService.onStatusChange = (info) => this.handleSyncStatusChange(info);
-            SyncService.onRemoteUpdate = (info) => this.handleSyncRemoteUpdate(info);
-            SyncService.onConflict = (err) => this.handleSyncConflict(err);
-        }
-
-        this.updateSyncUI();
-        const syncConfig = Database.getSyncConfig();
-        if (syncConfig && syncConfig.userName) {
-            document.getElementById('syncUserName').value = syncConfig.userName;
-        }
-        UI.showModal('syncMenuModal');
+    encodeInviteCode(groupId, url, anonKey) {
+        return btoa(JSON.stringify({ g: groupId, u: url, k: anonKey }));
     },
 
-    handleSaveSupabaseConfig() {
-        const url = document.getElementById('supabaseUrl').value.trim();
-        const anonKey = document.getElementById('supabaseAnonKey').value.trim();
-        if (!url || !anonKey) return;
+    decodeInviteCode(code) {
+        try {
+            const parsed = JSON.parse(atob(code));
+            if (!parsed.g || !parsed.u || !parsed.k) return null;
+            return { groupId: parsed.g, url: parsed.u, anonKey: parsed.k };
+        } catch {
+            return null;
+        }
+    },
 
+    _initSupabase(url, anonKey) {
         Database.setSupabaseConfig({ url, anonKey });
         SupabaseAdapter.init(url, anonKey);
         SyncService.api = SupabaseAdapter;
         SyncService.onStatusChange = (info) => this.handleSyncStatusChange(info);
         SyncService.onRemoteUpdate = (info) => this.handleSyncRemoteUpdate(info);
         SyncService.onConflict = (err) => this.handleSyncConflict(err);
-
-        UI.hideModal('supabaseConfigModal');
-        UI.showNotification('Supabase connected', 'success');
-        this.openSyncMenu();
     },
 
-    handleStartCreateGroup() {
-        const userName = document.getElementById('syncUserName').value.trim();
-        if (!userName) {
-            UI.showNotification('Please enter your display name', 'error');
-            return;
+    openSyncMenu() {
+        this.updateSyncUI();
+
+        // Pre-fill create form with saved config
+        const supaConfig = Database.getSupabaseConfig();
+        if (supaConfig) {
+            document.getElementById('supabaseUrl').value = supaConfig.url || '';
+            document.getElementById('supabaseAnonKey').value = supaConfig.anonKey || '';
         }
-        UI.hideModal('syncMenuModal');
-        document.getElementById('newGroupName').value = '';
-        UI.showModal('createGroupModal');
+        const syncConfig = Database.getSyncConfig();
+        if (syncConfig && syncConfig.userName) {
+            document.getElementById('syncCreateName').value = syncConfig.userName;
+            document.getElementById('syncJoinName').value = syncConfig.userName;
+        }
+
+        UI.showModal('syncMenuModal');
     },
 
     async handleCreateGroup() {
+        const userName = document.getElementById('syncCreateName').value.trim();
         const groupName = document.getElementById('newGroupName').value.trim();
-        const userName = document.getElementById('syncUserName').value.trim();
-        if (!groupName || !userName) return;
+        const url = document.getElementById('supabaseUrl').value.trim();
+        const anonKey = document.getElementById('supabaseAnonKey').value.trim();
+        if (!userName || !groupName || !url || !anonKey) return;
 
         try {
+            this._initSupabase(url, anonKey);
+
             const result = await SyncService.createGroup(groupName, userName);
 
             const blob = new Uint8Array(Database.db.export());
@@ -4182,8 +4161,11 @@ const App = {
             }
             SyncService.startPolling();
 
-            UI.hideModal('createGroupModal');
-            document.getElementById('inviteCodeDisplay').textContent = result.groupId;
+            const inviteCode = this.encodeInviteCode(result.groupId, url, anonKey);
+            this._currentInviteCode = inviteCode;
+
+            UI.hideModal('syncMenuModal');
+            document.getElementById('inviteCodeDisplay').textContent = inviteCode;
             UI.showModal('groupCreatedModal');
             this.updateSyncUI();
         } catch (err) {
@@ -4192,37 +4174,34 @@ const App = {
         }
     },
 
-    handleStartJoinGroup() {
-        const userName = document.getElementById('syncUserName').value.trim();
-        if (!userName) {
-            UI.showNotification('Please enter your display name', 'error');
+    async handleJoinGroup() {
+        const userName = document.getElementById('syncJoinName').value.trim();
+        const code = document.getElementById('joinGroupCode').value.trim();
+        if (!userName || !code) return;
+
+        const decoded = this.decodeInviteCode(code);
+        if (!decoded) {
+            UI.showNotification('Invalid invite code. Ask the group creator for a new one.', 'error');
             return;
         }
-        UI.hideModal('syncMenuModal');
-        document.getElementById('joinGroupId').value = '';
-        UI.showModal('joinGroupModal');
-    },
-
-    async handleJoinGroup() {
-        const groupId = document.getElementById('joinGroupId').value.trim();
-        const userName = document.getElementById('syncUserName').value.trim();
-        if (!groupId || !userName) return;
 
         try {
-            const result = await SyncService.joinGroup(groupId, userName);
+            this._initSupabase(decoded.url, decoded.anonKey);
+
+            const result = await SyncService.joinGroup(decoded.groupId, userName);
 
             const loaded = await SyncService.loadRemoteIntoDatabase(Database);
             if (loaded) {
                 this.refreshAll();
                 UI.showNotification('Joined "' + result.name + '" and loaded latest version', 'success');
             } else {
-                // No remote version yet — push current DB as first version
                 const blob = new Uint8Array(Database.db.export());
                 await SyncService.push(blob);
                 UI.showNotification('Joined "' + result.name + '"', 'success');
             }
 
-            Database.setSyncConfig({ groupId, groupName: result.name, userName });
+            Database.setSyncConfig({ groupId: decoded.groupId, groupName: result.name, userName });
+            this._currentInviteCode = code;
 
             if (!this._syncAutoSaveWrapped) {
                 SyncService.wrapAutoSave(Database);
@@ -4230,7 +4209,7 @@ const App = {
             }
             SyncService.startPolling();
 
-            UI.hideModal('joinGroupModal');
+            UI.hideModal('syncMenuModal');
             this.updateSyncUI();
         } catch (err) {
             console.error('Failed to join group:', err);
@@ -4260,6 +4239,7 @@ const App = {
     handleSyncDisconnect() {
         SyncService.disconnect();
         Database.clearSyncConfig();
+        this._currentInviteCode = null;
         this.updateSyncUI();
         UI.hideModal('syncMenuModal');
         UI.showNotification('Disconnected from group', 'info');
@@ -4320,10 +4300,18 @@ const App = {
             if (connectedPanel) connectedPanel.style.display = '';
 
             const syncConfig = Database.getSyncConfig();
+            const supaConfig = Database.getSupabaseConfig();
             document.getElementById('syncGroupName').textContent = (syncConfig && syncConfig.groupName) || '--';
-            document.getElementById('syncGroupId').textContent = SyncService.groupId || '--';
             document.getElementById('syncCurrentUser').textContent = SyncService.currentUser || '--';
             document.getElementById('syncVersion').textContent = 'v' + SyncService.localVersion;
+
+            // Rebuild invite code for connected panel
+            if (!this._currentInviteCode && SyncService.groupId && supaConfig) {
+                this._currentInviteCode = this.encodeInviteCode(SyncService.groupId, supaConfig.url, supaConfig.anonKey);
+            }
+            const codeEl = document.getElementById('syncInviteCode');
+            codeEl.textContent = this._currentInviteCode || '--';
+            codeEl.title = this._currentInviteCode || '';
         } else {
             dot.style.display = 'none';
             if (disconnectedPanel) disconnectedPanel.style.display = '';
