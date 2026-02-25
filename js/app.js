@@ -22,6 +22,8 @@ const App = {
     _beChartTimeline: null,
     _beChartProgress: null,
     _beProgressState: null,
+    _syncAutoSaveWrapped: false,
+    _rollbackTargetVersion: null,
 
     // Theme preset palettes: { c1: primary, c2: accent, c3: background, c4: surface, style?: string }
     themePresets: {
@@ -74,6 +76,9 @@ const App = {
 
             // Set up event listeners
             this.setupEventListeners();
+
+            // Initialize sync if previously configured
+            await this.initSync();
 
             document.body.style.opacity = '1';
             console.log('Application initialized successfully');
@@ -1521,6 +1526,77 @@ const App = {
                 });
                 UI.hideNotesTooltip();
             }
+        });
+
+        // ==================== SYNC / GROUP SHARING ====================
+
+        document.getElementById('syncBtn').addEventListener('click', () => {
+            this.openSyncMenu();
+        });
+
+        document.getElementById('supabaseConfigForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleSaveSupabaseConfig();
+        });
+        document.getElementById('cancelSupabaseConfigBtn').addEventListener('click', () => {
+            UI.hideModal('supabaseConfigModal');
+        });
+
+        document.getElementById('closeSyncMenuBtn').addEventListener('click', () => {
+            UI.hideModal('syncMenuModal');
+        });
+        document.getElementById('syncCreateGroupBtn').addEventListener('click', () => {
+            this.handleStartCreateGroup();
+        });
+        document.getElementById('syncJoinGroupBtn').addEventListener('click', () => {
+            this.handleStartJoinGroup();
+        });
+        document.getElementById('syncPullBtn').addEventListener('click', () => {
+            this.handleSyncPull();
+        });
+        document.getElementById('syncHistoryBtn').addEventListener('click', () => {
+            this.openVersionHistory();
+        });
+        document.getElementById('syncDisconnectBtn').addEventListener('click', () => {
+            this.handleSyncDisconnect();
+        });
+        document.getElementById('syncCopyIdBtn').addEventListener('click', () => {
+            this.copyToClipboard(SyncService.groupId);
+        });
+
+        document.getElementById('createGroupForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleCreateGroup();
+        });
+        document.getElementById('cancelCreateGroupBtn').addEventListener('click', () => {
+            UI.hideModal('createGroupModal');
+        });
+
+        document.getElementById('joinGroupForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleJoinGroup();
+        });
+        document.getElementById('cancelJoinGroupBtn').addEventListener('click', () => {
+            UI.hideModal('joinGroupModal');
+        });
+
+        document.getElementById('closeGroupCreatedBtn').addEventListener('click', () => {
+            UI.hideModal('groupCreatedModal');
+        });
+        document.getElementById('copyInviteCodeBtn').addEventListener('click', () => {
+            const code = document.getElementById('inviteCodeDisplay').textContent;
+            this.copyToClipboard(code);
+        });
+
+        document.getElementById('closeVersionHistoryBtn').addEventListener('click', () => {
+            UI.hideModal('versionHistoryModal');
+        });
+
+        document.getElementById('cancelRollbackBtn').addEventListener('click', () => {
+            UI.hideModal('rollbackModal');
+        });
+        document.getElementById('confirmRollbackBtn').addEventListener('click', () => {
+            this.handleConfirmRollback();
         });
     },
 
@@ -4000,6 +4076,339 @@ const App = {
             console.error('Error loading database:', error);
             UI.showNotification('Failed to load database. The file may be corrupted.', 'error');
         }
+    },
+
+    // ==================== SYNC / GROUP SHARING ====================
+
+    async initSync() {
+        const supaConfig = Database.getSupabaseConfig();
+        if (!supaConfig || !supaConfig.url || !supaConfig.anonKey) return;
+
+        SupabaseAdapter.init(supaConfig.url, supaConfig.anonKey);
+        SyncService.api = SupabaseAdapter;
+        SyncService.onStatusChange = (info) => this.handleSyncStatusChange(info);
+        SyncService.onRemoteUpdate = (info) => this.handleSyncRemoteUpdate(info);
+        SyncService.onConflict = (err) => this.handleSyncConflict(err);
+
+        const syncConfig = Database.getSyncConfig();
+        if (syncConfig && syncConfig.groupId && syncConfig.userName) {
+            try {
+                await SyncService.joinGroup(syncConfig.groupId, syncConfig.userName);
+                if (!this._syncAutoSaveWrapped) {
+                    SyncService.wrapAutoSave(Database);
+                    this._syncAutoSaveWrapped = true;
+                }
+                SyncService.startPolling();
+                this.updateSyncUI();
+            } catch (err) {
+                console.error('Failed to reconnect to group:', err);
+            }
+        }
+    },
+
+    openSyncMenu() {
+        const supaConfig = Database.getSupabaseConfig();
+        if (!supaConfig || !supaConfig.url) {
+            // Pre-fill if previously saved
+            const existing = Database.getSupabaseConfig();
+            if (existing) {
+                document.getElementById('supabaseUrl').value = existing.url || '';
+                document.getElementById('supabaseAnonKey').value = existing.anonKey || '';
+            }
+            UI.showModal('supabaseConfigModal');
+            return;
+        }
+
+        if (!SupabaseAdapter.isInitialized()) {
+            SupabaseAdapter.init(supaConfig.url, supaConfig.anonKey);
+            SyncService.api = SupabaseAdapter;
+            SyncService.onStatusChange = (info) => this.handleSyncStatusChange(info);
+            SyncService.onRemoteUpdate = (info) => this.handleSyncRemoteUpdate(info);
+            SyncService.onConflict = (err) => this.handleSyncConflict(err);
+        }
+
+        this.updateSyncUI();
+        const syncConfig = Database.getSyncConfig();
+        if (syncConfig && syncConfig.userName) {
+            document.getElementById('syncUserName').value = syncConfig.userName;
+        }
+        UI.showModal('syncMenuModal');
+    },
+
+    handleSaveSupabaseConfig() {
+        const url = document.getElementById('supabaseUrl').value.trim();
+        const anonKey = document.getElementById('supabaseAnonKey').value.trim();
+        if (!url || !anonKey) return;
+
+        Database.setSupabaseConfig({ url, anonKey });
+        SupabaseAdapter.init(url, anonKey);
+        SyncService.api = SupabaseAdapter;
+        SyncService.onStatusChange = (info) => this.handleSyncStatusChange(info);
+        SyncService.onRemoteUpdate = (info) => this.handleSyncRemoteUpdate(info);
+        SyncService.onConflict = (err) => this.handleSyncConflict(err);
+
+        UI.hideModal('supabaseConfigModal');
+        UI.showNotification('Supabase connected', 'success');
+        this.openSyncMenu();
+    },
+
+    handleStartCreateGroup() {
+        const userName = document.getElementById('syncUserName').value.trim();
+        if (!userName) {
+            UI.showNotification('Please enter your display name', 'error');
+            return;
+        }
+        UI.hideModal('syncMenuModal');
+        document.getElementById('newGroupName').value = '';
+        UI.showModal('createGroupModal');
+    },
+
+    async handleCreateGroup() {
+        const groupName = document.getElementById('newGroupName').value.trim();
+        const userName = document.getElementById('syncUserName').value.trim();
+        if (!groupName || !userName) return;
+
+        try {
+            const result = await SyncService.createGroup(groupName, userName);
+
+            const blob = new Uint8Array(Database.db.export());
+            await SyncService.push(blob);
+
+            Database.setSyncConfig({ groupId: result.groupId, groupName, userName });
+
+            if (!this._syncAutoSaveWrapped) {
+                SyncService.wrapAutoSave(Database);
+                this._syncAutoSaveWrapped = true;
+            }
+            SyncService.startPolling();
+
+            UI.hideModal('createGroupModal');
+            document.getElementById('inviteCodeDisplay').textContent = result.groupId;
+            UI.showModal('groupCreatedModal');
+            this.updateSyncUI();
+        } catch (err) {
+            console.error('Failed to create group:', err);
+            UI.showNotification('Failed to create group: ' + err.message, 'error');
+        }
+    },
+
+    handleStartJoinGroup() {
+        const userName = document.getElementById('syncUserName').value.trim();
+        if (!userName) {
+            UI.showNotification('Please enter your display name', 'error');
+            return;
+        }
+        UI.hideModal('syncMenuModal');
+        document.getElementById('joinGroupId').value = '';
+        UI.showModal('joinGroupModal');
+    },
+
+    async handleJoinGroup() {
+        const groupId = document.getElementById('joinGroupId').value.trim();
+        const userName = document.getElementById('syncUserName').value.trim();
+        if (!groupId || !userName) return;
+
+        try {
+            const result = await SyncService.joinGroup(groupId, userName);
+
+            const loaded = await SyncService.loadRemoteIntoDatabase(Database);
+            if (loaded) {
+                this.refreshAll();
+                UI.showNotification('Joined "' + result.name + '" and loaded latest version', 'success');
+            } else {
+                // No remote version yet — push current DB as first version
+                const blob = new Uint8Array(Database.db.export());
+                await SyncService.push(blob);
+                UI.showNotification('Joined "' + result.name + '"', 'success');
+            }
+
+            Database.setSyncConfig({ groupId, groupName: result.name, userName });
+
+            if (!this._syncAutoSaveWrapped) {
+                SyncService.wrapAutoSave(Database);
+                this._syncAutoSaveWrapped = true;
+            }
+            SyncService.startPolling();
+
+            UI.hideModal('joinGroupModal');
+            this.updateSyncUI();
+        } catch (err) {
+            console.error('Failed to join group:', err);
+            UI.showNotification('Failed to join group: ' + err.message, 'error');
+        }
+    },
+
+    async handleSyncPull() {
+        try {
+            const result = await SyncService.pull();
+            if (result.updated && result.data) {
+                Database.db = new Database.SQL.Database(result.data);
+                Database.migrateSchema();
+                await Database.saveToIndexedDB();
+                this.refreshAll();
+                UI.showNotification('Updated to v' + result.version + ' (by ' + result.savedBy + ')', 'success');
+            } else {
+                UI.showNotification('Already up to date', 'info');
+            }
+            this.updateSyncUI();
+        } catch (err) {
+            console.error('Pull failed:', err);
+            UI.showNotification('Failed to pull: ' + err.message, 'error');
+        }
+    },
+
+    handleSyncDisconnect() {
+        SyncService.disconnect();
+        Database.clearSyncConfig();
+        this.updateSyncUI();
+        UI.hideModal('syncMenuModal');
+        UI.showNotification('Disconnected from group', 'info');
+    },
+
+    handleSyncStatusChange(info) {
+        const dot = document.getElementById('syncStatusDot');
+        const text = document.getElementById('syncStatusText');
+
+        dot.className = 'sync-status-dot';
+        switch (info.status) {
+            case 'connected':
+            case 'saved':
+            case 'updated':
+                dot.classList.add('connected');
+                break;
+            case 'conflict':
+                dot.classList.add('conflict');
+                break;
+            case 'error':
+            case 'disconnected':
+                dot.classList.add('error');
+                break;
+            default:
+                dot.style.display = 'none';
+                return;
+        }
+        dot.style.display = '';
+        if (text) text.textContent = info.message || info.status;
+    },
+
+    handleSyncRemoteUpdate(info) {
+        if (info.data) {
+            Database.db = new Database.SQL.Database(info.data);
+            Database.migrateSchema();
+            Database.saveToIndexedDB();
+            this.refreshAll();
+            UI.showNotification('Updated to v' + info.version + ' (by ' + info.savedBy + ')', 'info');
+        }
+        this.updateSyncUI();
+    },
+
+    handleSyncConflict(err) {
+        UI.showNotification('Conflict: someone else saved. Pulling their changes...', 'error');
+        this.handleSyncPull();
+    },
+
+    updateSyncUI() {
+        const dot = document.getElementById('syncStatusDot');
+        const disconnectedPanel = document.getElementById('syncDisconnectedPanel');
+        const connectedPanel = document.getElementById('syncConnectedPanel');
+
+        if (SyncService.isConnected) {
+            dot.className = 'sync-status-dot connected';
+            dot.style.display = '';
+
+            if (disconnectedPanel) disconnectedPanel.style.display = 'none';
+            if (connectedPanel) connectedPanel.style.display = '';
+
+            const syncConfig = Database.getSyncConfig();
+            document.getElementById('syncGroupName').textContent = (syncConfig && syncConfig.groupName) || '--';
+            document.getElementById('syncGroupId').textContent = SyncService.groupId || '--';
+            document.getElementById('syncCurrentUser').textContent = SyncService.currentUser || '--';
+            document.getElementById('syncVersion').textContent = 'v' + SyncService.localVersion;
+        } else {
+            dot.style.display = 'none';
+            if (disconnectedPanel) disconnectedPanel.style.display = '';
+            if (connectedPanel) connectedPanel.style.display = 'none';
+        }
+    },
+
+    async openVersionHistory() {
+        UI.hideModal('syncMenuModal');
+        UI.showModal('versionHistoryModal');
+        document.getElementById('versionHistoryList').innerHTML = '<p class="empty-state">Loading...</p>';
+
+        try {
+            const history = await SyncService.getHistory(20);
+            const container = document.getElementById('versionHistoryList');
+
+            if (!history || history.length === 0) {
+                container.innerHTML = '<p class="empty-state">No versions yet.</p>';
+                return;
+            }
+
+            container.innerHTML = history.map(v => {
+                const date = new Date(v.savedAt).toLocaleString();
+                const size = (v.sizeBytes / 1024).toFixed(1) + ' KB';
+                const isCurrent = v.version === SyncService.localVersion;
+                return '<div class="version-item ' + (isCurrent ? 'version-item-current' : '') + '">' +
+                    '<div class="version-item-info">' +
+                    '<div class="version-item-number">v' + v.version + (isCurrent ? ' (current)' : '') + '</div>' +
+                    '<div class="version-item-meta">' + v.savedBy + ' &middot; ' + date + ' &middot; ' + size + '</div>' +
+                    '</div>' +
+                    (!isCurrent ? '<button type="button" class="btn btn-small btn-secondary rollback-btn" data-version="' + v.version + '">Rollback</button>' : '') +
+                    '</div>';
+            }).join('');
+
+            container.querySelectorAll('.rollback-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    this._rollbackTargetVersion = parseInt(btn.dataset.version);
+                    document.getElementById('rollbackMessage').textContent =
+                        'This will replace your current data with version ' + btn.dataset.version + '. Continue?';
+                    UI.showModal('rollbackModal');
+                });
+            });
+        } catch (err) {
+            console.error('Failed to load version history:', err);
+            document.getElementById('versionHistoryList').innerHTML = '<p class="empty-state">Failed to load history.</p>';
+        }
+    },
+
+    async handleConfirmRollback() {
+        if (!this._rollbackTargetVersion) return;
+
+        try {
+            const result = await SyncService.pullVersion(this._rollbackTargetVersion);
+            Database.db = new Database.SQL.Database(result.data);
+            Database.migrateSchema();
+            await Database.saveToIndexedDB();
+            SyncService.localVersion = result.version;
+
+            this.refreshAll();
+            UI.hideModal('rollbackModal');
+            UI.hideModal('versionHistoryModal');
+            UI.showNotification('Rolled back to v' + result.version, 'success');
+
+            const blob = new Uint8Array(Database.db.export());
+            await SyncService.push(blob);
+            this.updateSyncUI();
+        } catch (err) {
+            console.error('Rollback failed:', err);
+            UI.showNotification('Rollback failed: ' + err.message, 'error');
+        }
+        this._rollbackTargetVersion = null;
+    },
+
+    copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            UI.showNotification('Copied to clipboard', 'success');
+        }).catch(() => {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            UI.showNotification('Copied to clipboard', 'success');
+        });
     }
 };
 

@@ -872,6 +872,28 @@ const Database = {
         this.autoSave();
     },
 
+    // ==================== SYNC CONFIG (localStorage — survives DB replacement) ====================
+
+    getSyncConfig() {
+        try { return JSON.parse(localStorage.getItem('sync_config')); } catch { return null; }
+    },
+
+    setSyncConfig(config) {
+        localStorage.setItem('sync_config', JSON.stringify(config));
+    },
+
+    clearSyncConfig() {
+        localStorage.removeItem('sync_config');
+    },
+
+    getSupabaseConfig() {
+        try { return JSON.parse(localStorage.getItem('supabase_config')); } catch { return null; }
+    },
+
+    setSupabaseConfig(config) {
+        localStorage.setItem('supabase_config', JSON.stringify(config));
+    },
+
     // ==================== CALCULATIONS ====================
 
     /**

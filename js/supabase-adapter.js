@@ -1,0 +1,197 @@
+/**
+ * SupabaseAdapter — Implements SyncService.api using Supabase (Postgres + Storage).
+ *
+ * Requires the Supabase JS client loaded via CDN:
+ *   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+ *
+ * API contract (matches SyncService.api):
+ *   createGroup(name)           → { groupId, name, createdAt }
+ *   joinGroup(groupId, user)    → { groupId, name, members, currentVersion }
+ *   pushVersion(groupId, data)  → { version } or throws ConflictError
+ *   pullLatest(groupId)         → { version, data, savedBy, savedAt } | null
+ *   getHistory(groupId, limit)  → [{ version, savedBy, savedAt, sizeBytes }]
+ *   pullVersion(groupId, ver)   → { version, data, savedBy, savedAt }
+ */
+
+const SupabaseAdapter = {
+    _client: null,
+    BUCKET: 'db-blobs',
+
+    init(url, anonKey) {
+        this._client = supabase.createClient(url, anonKey);
+    },
+
+    isInitialized() {
+        return !!this._client;
+    },
+
+    // ==================== API METHODS ====================
+
+    async createGroup(name) {
+        const { data, error } = await this._client
+            .from('groups')
+            .insert({ name })
+            .select()
+            .single();
+        if (error) throw new Error('Failed to create group: ' + error.message);
+        return { groupId: data.id, name: data.name, createdAt: data.created_at };
+    },
+
+    async joinGroup(groupId, user) {
+        // Verify group exists
+        const { data: group, error: groupErr } = await this._client
+            .from('groups')
+            .select('id, name')
+            .eq('id', groupId)
+            .single();
+        if (groupErr || !group) throw new Error('Group not found');
+
+        // Add member
+        await this._client
+            .from('group_members')
+            .insert({ group_id: groupId, display_name: user });
+
+        // Get all members
+        const { data: members } = await this._client
+            .from('group_members')
+            .select('display_name')
+            .eq('group_id', groupId);
+
+        // Get current version
+        const { data: verData } = await this._client
+            .from('versions')
+            .select('version')
+            .eq('group_id', groupId)
+            .order('version', { ascending: false })
+            .limit(1);
+
+        const currentVersion = verData && verData.length > 0 ? verData[0].version : 0;
+
+        return {
+            groupId,
+            name: group.name,
+            members: (members || []).map(m => m.display_name),
+            currentVersion
+        };
+    },
+
+    async pushVersion(groupId, data) {
+        const newVersion = await this._rpcPushVersion(groupId, data);
+
+        // Upload blob to storage
+        const path = this._storagePath(groupId, newVersion);
+        await this._uploadBlob(path, data.blob);
+
+        return { version: newVersion };
+    },
+
+    async pullLatest(groupId) {
+        const { data: verData, error } = await this._client
+            .from('versions')
+            .select('version, saved_by, saved_at, storage_path')
+            .eq('group_id', groupId)
+            .order('version', { ascending: false })
+            .limit(1);
+
+        if (error) throw new Error('Failed to pull: ' + error.message);
+        if (!verData || verData.length === 0) return null;
+
+        const v = verData[0];
+        const blob = await this._downloadBlob(v.storage_path);
+
+        return {
+            version: v.version,
+            data: blob,
+            savedBy: v.saved_by,
+            savedAt: v.saved_at
+        };
+    },
+
+    async getHistory(groupId, limit = 20) {
+        const { data, error } = await this._client
+            .from('versions')
+            .select('version, saved_by, saved_at, size_bytes')
+            .eq('group_id', groupId)
+            .order('version', { ascending: false })
+            .limit(limit);
+
+        if (error) throw new Error('Failed to get history: ' + error.message);
+
+        return (data || []).map(v => ({
+            version: v.version,
+            savedBy: v.saved_by,
+            savedAt: v.saved_at,
+            sizeBytes: v.size_bytes
+        }));
+    },
+
+    async pullVersion(groupId, ver) {
+        const { data: verData, error } = await this._client
+            .from('versions')
+            .select('version, saved_by, saved_at, storage_path')
+            .eq('group_id', groupId)
+            .eq('version', ver)
+            .single();
+
+        if (error || !verData) throw new Error('Version not found');
+
+        const blob = await this._downloadBlob(verData.storage_path);
+
+        return {
+            version: verData.version,
+            data: blob,
+            savedBy: verData.saved_by,
+            savedAt: verData.saved_at
+        };
+    },
+
+    // ==================== INTERNALS ====================
+
+    _storagePath(groupId, version) {
+        return `${groupId}/v${version}.db`;
+    },
+
+    async _rpcPushVersion(groupId, data) {
+        const { data: result, error } = await this._client.rpc('push_version', {
+            p_group_id: groupId,
+            p_base_version: data.baseVersion,
+            p_saved_by: data.user,
+            p_size_bytes: data.blob.length,
+            p_storage_path: this._storagePath(groupId, data.baseVersion + 1)
+        });
+
+        if (error) {
+            if (error.message && error.message.includes('VERSION_CONFLICT')) {
+                const conflictErr = new Error('Version conflict');
+                conflictErr.name = 'ConflictError';
+                conflictErr.code = 'VERSION_CONFLICT';
+                // Extract remote version from error message if possible
+                const match = error.message.match(/VERSION_CONFLICT:(\d+)/);
+                conflictErr.remoteVersion = match ? parseInt(match[1]) : null;
+                throw conflictErr;
+            }
+            throw new Error('Push failed: ' + error.message);
+        }
+
+        return result;
+    },
+
+    async _uploadBlob(path, blob) {
+        const { error } = await this._client.storage
+            .from(this.BUCKET)
+            .upload(path, blob, {
+                contentType: 'application/octet-stream',
+                upsert: false
+            });
+        if (error) throw new Error('Blob upload failed: ' + error.message);
+    },
+
+    async _downloadBlob(path) {
+        const { data, error } = await this._client.storage
+            .from(this.BUCKET)
+            .download(path);
+        if (error) throw new Error('Blob download failed: ' + error.message);
+        const arrayBuffer = await data.arrayBuffer();
+        return new Uint8Array(arrayBuffer);
+    }
+};
