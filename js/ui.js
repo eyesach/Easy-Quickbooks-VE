@@ -1918,6 +1918,267 @@ const UI = {
     capitalizeFirst(str) {
         if (!str) return '';
         return str.charAt(0).toUpperCase() + str.slice(1);
+    },
+
+    // ==================== BREAK-EVEN RENDERING ====================
+
+    /**
+     * Render the 4 break-even summary cards with fixed cost breakdown
+     * @param {Object} result - From Utils.computeBreakEven()
+     * @param {Object} fixedBreakdown - {budget, depreciation, loanInterest} avg monthly values
+     */
+    renderBreakevenSummaryCards(result, fixedBreakdown, cfg) {
+        const container = document.getElementById('beSummaryCards');
+        if (!result.isValid) {
+            container.innerHTML = '<p class="empty-state">Configure selling price and COGS to calculate break-even.</p>';
+            return;
+        }
+
+        // Build fixed cost breakdown lines
+        let breakdownHtml = '';
+        if (fixedBreakdown) {
+            const lines = [];
+            if (fixedBreakdown.budget > 0) lines.push(`Expenses: ${Utils.formatCurrency(fixedBreakdown.budget)}`);
+            if (fixedBreakdown.depreciation > 0) lines.push(`Depreciation: ${Utils.formatCurrency(fixedBreakdown.depreciation)}`);
+            if (fixedBreakdown.loanInterest > 0) lines.push(`Loan Interest: ${Utils.formatCurrency(fixedBreakdown.loanInterest)}`);
+            if (fixedBreakdown.assetCosts > 0) lines.push(`Asset Costs: ${Utils.formatCurrency(fixedBreakdown.assetCosts)}`);
+            if (lines.length > 0) {
+                breakdownHtml = `<span class="be-card-breakdown">${lines.join('<br>')}</span>`;
+            }
+        }
+
+        // Per-stream monthly revenue cards
+        let revenueCardsHtml = '';
+        if (cfg && cfg.b2b && cfg.b2b.enabled && result.b2bMonthlyRevenue > 0) {
+            revenueCardsHtml += `
+                <div class="be-card">
+                    <span class="be-card-label">B2B Monthly Revenue</span>
+                    <span class="be-card-value">${Utils.formatCurrency(result.b2bMonthlyRevenue)}</span>
+                </div>
+            `;
+        }
+        if (cfg && cfg.consumer && cfg.consumer.enabled && cfg.consumer.avgPrice > 0 && result.consumerUnitsNeeded > 0) {
+            const consumerMonthlyRev = result.consumerUnitsNeeded * cfg.consumer.avgPrice;
+            revenueCardsHtml += `
+                <div class="be-card">
+                    <span class="be-card-label">Consumer Monthly Revenue</span>
+                    <span class="be-card-value">${Utils.formatCurrency(consumerMonthlyRev)}</span>
+                    <span class="be-card-breakdown">${result.consumerUnitsNeeded.toLocaleString()} units at BE</span>
+                </div>
+            `;
+        }
+
+        container.innerHTML = `
+            <div class="be-card">
+                <span class="be-card-label">Monthly Fixed Costs</span>
+                <span class="be-card-value">${Utils.formatCurrency(result.monthlyFixedCosts)}</span>
+                ${breakdownHtml}
+            </div>
+            <div class="be-card be-card-highlight">
+                <span class="be-card-label">Break-Even Units/Mo</span>
+                <span class="be-card-value">${result.breakEvenUnits.toLocaleString()}</span>
+            </div>
+            ${(cfg && cfg.b2b && cfg.b2b.enabled && cfg.b2b.monthlyUnits > 0 && result.consumerUnitsNeeded > 0) ? `
+            <div class="be-card">
+                <span class="be-card-label">Consumer BE Units/Mo</span>
+                <span class="be-card-value">${result.consumerUnitsNeeded.toLocaleString()}</span>
+                <span class="be-card-breakdown">Excludes B2B</span>
+            </div>
+            ` : ''}
+            <div class="be-card">
+                <span class="be-card-label">Break-Even Revenue/Mo</span>
+                <span class="be-card-value">${Utils.formatCurrency(result.breakEvenRevenue)}</span>
+            </div>
+            <div class="be-card">
+                <span class="be-card-label">Weighted Gross Margin</span>
+                <span class="be-card-value">${result.weightedCM.toFixed(1)}%</span>
+            </div>
+            ${revenueCardsHtml}
+        `;
+    },
+
+    /**
+     * Render per-channel breakdown cards
+     * @param {Object} result - From Utils.computeBreakEven()
+     * @param {Object} cfg - Break-even config
+     */
+    renderBreakevenChannelBreakdown(result, cfg) {
+        const container = document.getElementById('beChannelBreakdown');
+        let html = '';
+
+        if (cfg.consumer && cfg.consumer.enabled && cfg.consumer.avgPrice > 0) {
+            html += `
+                <div class="be-channel-card">
+                    <div class="be-channel-title">Consumer Sales</div>
+                    <div class="be-channel-row">
+                        <span>Avg. Price</span><span>${Utils.formatCurrency(cfg.consumer.avgPrice)}</span>
+                    </div>
+                    <div class="be-channel-row">
+                        <span>Avg. COGS</span><span>${Utils.formatCurrency(cfg.consumer.avgCogs || 0)}</span>
+                    </div>
+                    <div class="be-channel-row be-channel-highlight">
+                        <span>CM / Unit</span><span>${Utils.formatCurrency(result.consumerCM)}</span>
+                    </div>
+                    <div class="be-channel-row">
+                        <span>Gross Margin</span><span>${result.consumerCMPercent.toFixed(1)}%</span>
+                    </div>
+                    <div class="be-channel-row be-channel-highlight">
+                        <span>Units to Break-Even</span><span>${result.consumerUnitsNeeded.toLocaleString()}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (cfg.b2b && cfg.b2b.enabled && cfg.b2b.monthlyUnits > 0) {
+            html += `
+                <div class="be-channel-card">
+                    <div class="be-channel-title">B2B Contract</div>
+                    <div class="be-channel-row">
+                        <span>Rate / Unit</span><span>${Utils.formatCurrency(cfg.b2b.ratePerUnit || 0)}</span>
+                    </div>
+                    <div class="be-channel-row">
+                        <span>COGS / Unit</span><span>${Utils.formatCurrency(cfg.b2b.cogsPerUnit || 0)}</span>
+                    </div>
+                    <div class="be-channel-row be-channel-highlight">
+                        <span>CM / Unit</span><span>${Utils.formatCurrency(result.b2bCM)}</span>
+                    </div>
+                    <div class="be-channel-row">
+                        <span>Gross Margin</span><span>${result.b2bCMPercent.toFixed(1)}%</span>
+                    </div>
+                    <div class="be-channel-row">
+                        <span>Monthly Units</span><span>${(cfg.b2b.monthlyUnits || 0).toLocaleString()}</span>
+                    </div>
+                    <div class="be-channel-row be-channel-highlight">
+                        <span>Monthly Contribution</span><span>${Utils.formatCurrency(result.b2bMonthlyContribution)}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        container.innerHTML = html;
+    },
+
+    /**
+     * Render break-even progress summary cards
+     * @param {Object} data - Progress data from _computeAndRenderProgress()
+     */
+    renderBreakevenProgressCards(data) {
+        const container = document.getElementById('beProgressCards');
+
+        const statusClass = data.onTrack ? 'be-progress-on-track' : 'be-progress-behind';
+        const statusText = data.onTrack ? 'On Track' : 'Behind';
+        const statusIcon = data.onTrack ? '\u2713' : '\u2717';
+
+        // B2B/Consumer breakdown for actual revenue
+        let actualBreakdown = '';
+        if (data.actualB2b > 0 || data.actualConsumer > 0) {
+            const lines = [];
+            if (data.actualConsumer > 0) lines.push(`Consumer: ${Utils.formatCurrency(data.actualConsumer)}`);
+            if (data.actualB2b > 0) lines.push(`B2B: ${Utils.formatCurrency(data.actualB2b)}`);
+            actualBreakdown = `<span class="be-card-breakdown">${lines.join('<br>')}</span>`;
+        }
+
+        container.innerHTML = `
+            <div class="be-card">
+                <span class="be-card-label">Actual Revenue</span>
+                <span class="be-card-value">${Utils.formatCurrency(data.actualTotal)}</span>
+                ${actualBreakdown}
+                <span class="be-card-breakdown">${data.elapsedCount} of ${data.totalMonths} months</span>
+            </div>
+            <div class="be-card">
+                <span class="be-card-label">Target (On Pace)</span>
+                <span class="be-card-value">${Utils.formatCurrency(data.targetByNow)}</span>
+                <span class="be-card-breakdown">Expected by ${Utils.formatMonthShort(data.asOfMonth)}</span>
+            </div>
+            <div class="be-card ${statusClass}">
+                <span class="be-card-label">Status</span>
+                <span class="be-card-value">${statusIcon} ${statusText}</span>
+                <span class="be-card-breakdown">${data.onTrack ? 'Ahead by' : 'Behind by'} ${Utils.formatCurrency(Math.abs(data.actualTotal - data.targetByNow))}</span>
+            </div>
+            <div class="be-card be-card-highlight">
+                <span class="be-card-label">Remaining Revenue</span>
+                <span class="be-card-value">${Utils.formatCurrency(data.remainingRevenue)}</span>
+                <span class="be-card-breakdown">${data.remainingCount} months left</span>
+            </div>
+            <div class="be-card">
+                <span class="be-card-label">Monthly Needed (Remaining)</span>
+                <span class="be-card-value">${Utils.formatCurrency(data.monthlyNeeded)}</span>
+                <span class="be-card-breakdown">Per month to break even</span>
+            </div>
+            <div class="be-card">
+                <span class="be-card-label">Total BE Revenue</span>
+                <span class="be-card-value">${Utils.formatCurrency(data.totalBERevenue)}</span>
+                <span class="be-card-breakdown">Full ${data.totalMonths}-month target</span>
+            </div>
+        `;
+    },
+
+    /**
+     * Render the break-even data points table with separate B2B and consumer columns
+     * @param {Array} points - From Utils.computeBreakEvenChartPoints()
+     * @param {number} consumerBETotal - Consumer break-even units (timeline total)
+     * @param {number} b2bTotal - Total B2B units across timeline
+     * @param {number} increment - Unit axis increment
+     */
+    renderBreakevenDataTable(points, b2bTotal, increment, consumerBETotal, exactBEPoint) {
+        const container = document.getElementById('beDataTable');
+        if (!points || points.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        // Merge exact break-even point into table rows (if not already on an increment)
+        let tableRows = points.map(p => ({ ...p, isExactBE: false }));
+        if (exactBEPoint && consumerBETotal > 0) {
+            const alreadyExists = tableRows.some(p => p.consumerUnits === consumerBETotal);
+            if (!alreadyExists) {
+                tableRows.push({ ...exactBEPoint, isExactBE: true });
+                tableRows.sort((a, b) => a.consumerUnits - b.consumerUnits);
+            } else {
+                tableRows = tableRows.map(p =>
+                    p.consumerUnits === consumerBETotal ? { ...p, isExactBE: true } : p
+                );
+            }
+        }
+
+        let html = `
+            <div class="be-table-header-info">
+                <span><strong>Commercial (B2B):</strong> ${b2bTotal.toLocaleString()} units</span>
+                <span><strong>Consumer Break-Even:</strong> ${(consumerBETotal || 0).toLocaleString()} units</span>
+                <span><strong>Increment:</strong> ${increment.toLocaleString()}</span>
+            </div>
+            <table class="be-table">
+                <thead>
+                    <tr>
+                        <th>Commercial Sold</th>
+                        <th>Consumer Units Sold</th>
+                        <th>Revenue</th>
+                        <th>Variable Cost</th>
+                        <th>Fixed Cost</th>
+                        <th>Total Cost</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        tableRows.forEach(p => {
+            const profit = p.revenue - p.totalCosts;
+            const isBreakEven = p.isExactBE || p.consumerUnits === consumerBETotal;
+            const rowClass = isBreakEven ? 'be-row-breakeven' : (profit < 0 ? 'be-row-loss' : 'be-row-profit');
+            html += `
+                <tr class="${rowClass}">
+                    <td>${p.b2bUnits.toLocaleString()}</td>
+                    <td>${p.consumerUnits.toLocaleString()}${isBreakEven ? ' ★' : ''}</td>
+                    <td>${Utils.formatCurrency(p.revenue)}</td>
+                    <td>${Utils.formatCurrency(p.variableCosts)}</td>
+                    <td>${Utils.formatCurrency(p.fixedCosts)}</td>
+                    <td>${Utils.formatCurrency(p.totalCosts)}</td>
+                </tr>
+            `;
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
     }
 };
 

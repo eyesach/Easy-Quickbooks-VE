@@ -663,6 +663,174 @@ const Utils = {
         const g = parseInt(hex.substring(2, 4), 16);
         const b = parseInt(hex.substring(4, 6), 16);
         return `${r}, ${g}, ${b}`;
+    },
+
+    // ==================== BREAK-EVEN ANALYSIS ====================
+
+    /**
+     * Core break-even calculation with dual-channel (Consumer + B2B) support.
+     * B2B is a committed base load whose contribution offsets fixed costs first;
+     * Consumer channel covers the remaining fixed costs.
+     * @param {Object} cfg - Break-even config from DB
+     * @param {number} monthlyFixedCosts - Total monthly fixed costs
+     * @returns {Object} Break-even result
+     */
+    computeBreakEven(cfg, monthlyFixedCosts) {
+        const result = {
+            isValid: false,
+            consumerCM: 0,
+            b2bCM: 0,
+            weightedCM: 0,
+            consumerCMPercent: 0,
+            b2bCMPercent: 0,
+            breakEvenUnits: 0,
+            breakEvenRevenue: 0,
+            monthlyFixedCosts,
+            b2bMonthlyRevenue: 0,
+            b2bMonthlyCosts: 0,
+            b2bMonthlyContribution: 0,
+            consumerUnitsNeeded: 0
+        };
+
+        const consumer = cfg.consumer || {};
+        const b2b = cfg.b2b || {};
+
+        // Consumer contribution margin per unit
+        if (consumer.enabled && consumer.avgPrice > 0) {
+            result.consumerCM = consumer.avgPrice - (consumer.avgCogs || 0);
+            result.consumerCMPercent = (result.consumerCM / consumer.avgPrice) * 100;
+        }
+
+        // B2B contribution per month (committed contract)
+        if (b2b.enabled && b2b.monthlyUnits > 0 && b2b.ratePerUnit > 0) {
+            result.b2bCM = b2b.ratePerUnit - (b2b.cogsPerUnit || 0);
+            result.b2bCMPercent = (result.b2bCM / b2b.ratePerUnit) * 100;
+            result.b2bMonthlyRevenue = b2b.monthlyUnits * b2b.ratePerUnit;
+            result.b2bMonthlyCosts = b2b.monthlyUnits * (b2b.cogsPerUnit || 0);
+            result.b2bMonthlyContribution = b2b.monthlyUnits * result.b2bCM;
+        }
+
+        // Remaining fixed costs after B2B contribution
+        const remainingFixed = Math.max(0, monthlyFixedCosts - result.b2bMonthlyContribution);
+
+        // Consumer units needed to cover remaining fixed costs
+        if (consumer.enabled && result.consumerCM > 0) {
+            result.consumerUnitsNeeded = Math.ceil(remainingFixed / result.consumerCM);
+            result.breakEvenUnits = result.consumerUnitsNeeded + (b2b.enabled ? (b2b.monthlyUnits || 0) : 0);
+            result.breakEvenRevenue = (result.consumerUnitsNeeded * consumer.avgPrice) + result.b2bMonthlyRevenue;
+            result.isValid = true;
+        } else if (b2b.enabled && result.b2bMonthlyContribution >= monthlyFixedCosts) {
+            // B2B alone covers fixed costs
+            result.breakEvenUnits = b2b.monthlyUnits || 0;
+            result.breakEvenRevenue = result.b2bMonthlyRevenue;
+            result.isValid = true;
+        }
+
+        // Weighted CM (blended across both channels at break-even volume)
+        if (result.isValid && result.breakEvenUnits > 0) {
+            const totalRevenue = result.breakEvenRevenue;
+            const totalVarCosts = (result.consumerUnitsNeeded * (consumer.avgCogs || 0)) + result.b2bMonthlyCosts;
+            result.weightedCM = totalRevenue > 0 ? ((totalRevenue - totalVarCosts) / totalRevenue) * 100 : 0;
+        }
+
+        return result;
+    },
+
+    /**
+     * Generate data points for the break-even chart and table.
+     * B2B units are a constant column (total across timeline); consumer units are the variable X axis.
+     * @param {Object} cfg - Break-even config
+     * @param {number} monthlyFixedCosts - Average monthly fixed costs
+     * @param {number} consumerBEMonthly - Monthly consumer units needed to break even
+     * @param {number} unitIncrement - Increment between data points
+     * @param {number} monthCount - Number of months in timeline
+     * @returns {Array} Array of {consumerUnits, b2bUnits, revenue, variableCosts, fixedCosts, totalCosts}
+     */
+    computeBreakEvenChartPoints(cfg, monthlyFixedCosts, consumerBEMonthly, unitIncrement, monthCount) {
+        const months = Math.max(1, monthCount || 1);
+        const increment = Math.max(1, unitIncrement || 100);
+        const consumer = cfg.consumer || {};
+        const b2b = cfg.b2b || {};
+
+        const b2bMonthly = (b2b.enabled && b2b.monthlyUnits > 0) ? b2b.monthlyUnits : 0;
+        const b2bTotal = b2bMonthly * months;
+        const fixedTotal = Math.round(monthlyFixedCosts * months * 100) / 100;
+
+        const consumerPrice = consumer.enabled ? (consumer.avgPrice || 0) : 0;
+        const consumerCogs = consumer.enabled ? (consumer.avgCogs || 0) : 0;
+        const b2bRate = b2b.enabled ? (b2b.ratePerUnit || 0) : 0;
+        const b2bCogs = b2b.enabled ? (b2b.cogsPerUnit || 0) : 0;
+
+        const consumerBETotal = Math.ceil(consumerBEMonthly * months);
+        const maxConsumer = Math.max(consumerBETotal * 2, increment * 10);
+        const points = [];
+
+        for (let cu = 0; cu <= maxConsumer; cu += increment) {
+            const revenue = (b2bTotal * b2bRate) + (cu * consumerPrice);
+            const variableCosts = (b2bTotal * b2bCogs) + (cu * consumerCogs);
+            const totalCosts = variableCosts + fixedTotal;
+
+            points.push({
+                consumerUnits: cu,
+                b2bUnits: b2bTotal,
+                revenue: Math.round(revenue * 100) / 100,
+                variableCosts: Math.round(variableCosts * 100) / 100,
+                fixedCosts: fixedTotal,
+                totalCosts: Math.round(totalCosts * 100) / 100
+            });
+        }
+
+        return points;
+    },
+
+    /**
+     * Compute break-even data across a timeline of months.
+     * @param {Object} cfg - Break-even config
+     * @param {Array} months - Array of YYYY-MM strings
+     * @param {Object} assetDeprByMonth - {month: totalDepreciation}
+     * @param {Object} loanInterestByMonth - {month: totalInterest}
+     * @param {Function} getBudgetForMonth - (month) => budgetFixedCosts
+     * @returns {Array} Array of {month, revenue, fixedCosts, variableCosts, totalCosts, profit, breakEvenUnits}
+     */
+    computeBreakevenTimeline(cfg, months, assetDeprByMonth, loanInterestByMonth, getBudgetForMonth) {
+        const consumer = cfg.consumer || {};
+        const b2b = cfg.b2b || {};
+        const results = [];
+
+        months.forEach(month => {
+            let fixedCosts = 0;
+            if (cfg.includeBudgetExpenses) fixedCosts += getBudgetForMonth(month);
+            if (cfg.includeAssetDepreciation) fixedCosts += (assetDeprByMonth[month] || 0);
+            if (cfg.includeLoanInterest) fixedCosts += (loanInterestByMonth[month] || 0);
+
+            // Monthly revenue and variable costs from both channels
+            const b2bUnits = (b2b.enabled && b2b.monthlyUnits > 0) ? b2b.monthlyUnits : 0;
+            const b2bRevenue = b2bUnits * (b2b.ratePerUnit || 0);
+            const b2bVarCosts = b2bUnits * (b2b.cogsPerUnit || 0);
+
+            // For timeline, assume break-even consumer volume
+            const beResult = this.computeBreakEven(cfg, fixedCosts);
+            const consumerUnits = beResult.consumerUnitsNeeded || 0;
+            const consumerRevenue = consumerUnits * (consumer.avgPrice || 0);
+            const consumerVarCosts = consumerUnits * (consumer.avgCogs || 0);
+
+            const revenue = consumerRevenue + b2bRevenue;
+            const variableCosts = consumerVarCosts + b2bVarCosts;
+            const totalCosts = fixedCosts + variableCosts;
+
+            results.push({
+                month,
+                fixedCosts: Math.round(fixedCosts * 100) / 100,
+                revenue: Math.round(revenue * 100) / 100,
+                variableCosts: Math.round(variableCosts * 100) / 100,
+                totalCosts: Math.round(totalCosts * 100) / 100,
+                profit: Math.round((revenue - totalCosts) * 100) / 100,
+                breakEvenUnits: beResult.breakEvenUnits,
+                consumerBERevenue: Math.round(consumerRevenue * 100) / 100
+            });
+        });
+
+        return results;
     }
 };
 

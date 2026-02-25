@@ -18,14 +18,24 @@ const App = {
     pendingInlineStatusChange: null, // {id, newStatus, selectElement}
     currentSortMode: 'entryDate',
     _timeline: null,
+    _beChartBreakeven: null,
+    _beChartTimeline: null,
+    _beChartProgress: null,
+    _beProgressState: null,
 
-    // Theme preset palettes: { c1: primary, c2: accent, c3: background, c4: surface }
+    // Theme preset palettes: { c1: primary, c2: accent, c3: background, c4: surface, style?: string }
     themePresets: {
+        // Color-only themes
         default:  { c1: '#4a90a4', c2: '#e8f0f3', c3: '#f8f9fa', c4: '#ffffff' },
         ocean:    { c1: '#9EBAC2', c2: '#BAE0EB', c3: '#f0f7fa', c4: '#ffffff' },
         forest:   { c1: '#2d6a4f', c2: '#d8f3dc', c3: '#f0f7f0', c4: '#ffffff' },
         sunset:   { c1: '#e76f51', c2: '#fce4d6', c3: '#fdf8f4', c4: '#ffffff' },
         midnight: { c1: '#6c63ff', c2: '#e8e6ff', c3: '#f5f4ff', c4: '#ffffff' },
+        // Extreme design styles (CSS handles font, radius, shadows via data-theme-style)
+        modern:     { c1: '#0f172a', c2: '#f1f5f9', c3: '#f8fafc', c4: '#ffffff', style: 'modern' },
+        futuristic: { c1: '#00d4ff', c2: '#0f1729', c3: '#080e1a', c4: '#111827', style: 'futuristic' },
+        vintage:    { c1: '#7c5a3c', c2: '#f0e6d6', c3: '#faf6f0', c4: '#fffdf8', style: 'vintage' },
+        accounting: { c1: '#1e3a5f', c2: '#f0f2f5', c3: '#ffffff', c4: '#ffffff', style: 'accounting' },
     },
 
     /**
@@ -110,6 +120,11 @@ const App = {
         const budgetTab = document.getElementById('budgetTab');
         if (budgetTab && budgetTab.style.display !== 'none') {
             this.refreshBudget();
+        }
+        // Refresh Break-Even tab if visible
+        const beTab = document.getElementById('breakevenTab');
+        if (beTab && beTab.style.display !== 'none') {
+            this.refreshBreakeven();
         }
     },
 
@@ -590,15 +605,15 @@ const App = {
     },
 
     /**
-     * Switch between Journal, Cash Flow, and P&L tabs
-     * @param {string} tab - 'journal', 'cashflow', or 'pnl'
+     * Switch between main tabs
+     * @param {string} tab - 'journal' | 'cashflow' | 'pnl' | 'balancesheet' | 'assets' | 'loan' | 'budget' | 'breakeven'
      */
     switchMainTab(tab) {
         document.querySelectorAll('.main-tab').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.tab === tab);
         });
 
-        const tabs = ['journalTab', 'cashflowTab', 'pnlTab', 'balancesheetTab', 'assetsTab', 'loanTab', 'budgetTab'];
+        const tabs = ['journalTab', 'cashflowTab', 'pnlTab', 'balancesheetTab', 'assetsTab', 'loanTab', 'budgetTab', 'breakevenTab'];
         tabs.forEach(id => {
             const el = document.getElementById(id);
             if (el) el.style.display = 'none';
@@ -622,6 +637,9 @@ const App = {
         } else if (tab === 'budget') {
             document.getElementById('budgetTab').style.display = 'block';
             this.refreshBudget();
+        } else if (tab === 'breakeven') {
+            document.getElementById('breakevenTab').style.display = 'block';
+            this.refreshBreakeven();
         } else {
             document.getElementById('journalTab').style.display = 'block';
         }
@@ -667,6 +685,9 @@ const App = {
             : (this.themePresets[preset] || this.themePresets.default);
 
         const root = document.documentElement;
+
+        // Set or clear design style (drives CSS overrides for font, radius, shadows, etc.)
+        root.setAttribute('data-theme-style', colors.style || '');
 
         // Primary and derived
         root.style.setProperty('--color-primary', colors.c1);
@@ -803,16 +824,18 @@ const App = {
             UI.updateJournalTitle(owner);
         }, 500));
 
-        // Auto-size the owner input
-        journalOwnerInput.addEventListener('input', () => {
-            const length = journalOwnerInput.value.length;
-            journalOwnerInput.style.width = Math.max(120, (length + 2) * 14) + 'px';
-        });
-        // Set initial width
-        const initLength = journalOwnerInput.value.length;
-        if (initLength > 0) {
-            journalOwnerInput.style.width = Math.max(120, (initLength + 2) * 14) + 'px';
-        }
+        // Auto-size the owner input using a hidden measurement span
+        const measureSpan = document.createElement('span');
+        measureSpan.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;font-size:1.5rem;font-weight:600;';
+        document.body.appendChild(measureSpan);
+
+        const autoSizeOwnerInput = () => {
+            const text = journalOwnerInput.value || journalOwnerInput.placeholder;
+            measureSpan.textContent = text;
+            journalOwnerInput.style.width = (measureSpan.offsetWidth + 8) + 'px';
+        };
+        journalOwnerInput.addEventListener('input', autoSizeOwnerInput);
+        autoSizeOwnerInput();
 
         // ==================== CATEGORIES ====================
 
@@ -1008,6 +1031,10 @@ const App = {
 
         document.getElementById('cancelMonthPaidPromptBtn').addEventListener('click', () => {
             this.cancelMonthPaidPrompt();
+        });
+
+        document.getElementById('paidTodayBtn').addEventListener('click', () => {
+            this.confirmPaidToday();
         });
 
         // ==================== FILTERS & SORT ====================
@@ -1413,6 +1440,45 @@ const App = {
             document.getElementById('recordBudgetDateProcessedGroup').style.display = status !== 'pending' ? '' : 'none';
         });
 
+        // ==================== BREAK-EVEN ====================
+        document.getElementById('beConfigBtn').addEventListener('click', () => this.openBeConfigModal());
+        document.getElementById('beConfigForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleSaveBeConfig();
+        });
+        document.getElementById('cancelBeConfigBtn').addEventListener('click', () => UI.hideModal('beConfigModal'));
+        document.getElementById('beClearTimelineBtn').addEventListener('click', () => {
+            document.getElementById('beTimelineStartMonth').value = '';
+            document.getElementById('beTimelineStartYear').value = '';
+            document.getElementById('beTimelineEndMonth').value = '';
+            document.getElementById('beTimelineEndYear').value = '';
+        });
+
+        // Channel toggle visibility
+        document.getElementById('beConsumerEnabled').addEventListener('change', (e) => {
+            document.getElementById('beConsumerFields').style.display = e.target.checked ? 'flex' : 'none';
+        });
+        document.getElementById('beB2bEnabled').addEventListener('change', (e) => {
+            document.getElementById('beB2bFields').style.display = e.target.checked ? 'flex' : 'none';
+        });
+
+        // CM preview updates
+        ['beConsumerPrice', 'beConsumerCogs'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => this._updateBeCmPreview('consumer'));
+        });
+        ['beB2bRate', 'beB2bCogs'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => this._updateBeCmPreview('b2b'));
+        });
+
+        // Progress tracker month dropdown
+        document.getElementById('beProgressMonth').addEventListener('change', () => {
+            if (this._beProgressState) {
+                const { beResult, cfg, months, timelinePoints } = this._beProgressState;
+                const asOf = document.getElementById('beProgressMonth').value;
+                this._computeAndRenderProgress(beResult, cfg, months, asOf, timelinePoints);
+            }
+        });
+
         // ==================== MODALS & KEYBOARD ====================
 
         // Close modals on outside click
@@ -1520,6 +1586,7 @@ const App = {
         document.getElementById('categoryCogs').checked = false;
         document.getElementById('categoryDepreciation').checked = false;
         document.getElementById('categorySalesTax').checked = false;
+        document.getElementById('categoryB2b').checked = false;
     },
 
     /**
@@ -1541,6 +1608,7 @@ const App = {
         const isCogs = document.getElementById('categoryCogs').checked;
         const isDepreciation = document.getElementById('categoryDepreciation').checked;
         const isSalesTax = document.getElementById('categorySalesTax').checked;
+        const isB2b = document.getElementById('categoryB2b').checked;
 
         if (!name) {
             UI.showNotification('Please enter a category name', 'error');
@@ -1550,11 +1618,11 @@ const App = {
         try {
             if (editingId) {
                 // Update existing category
-                Database.updateCategory(parseInt(editingId), name, isMonthly, defaultAmount, defaultType, folderId, showOnPl, isCogs, isDepreciation, isSalesTax);
+                Database.updateCategory(parseInt(editingId), name, isMonthly, defaultAmount, defaultType, folderId, showOnPl, isCogs, isDepreciation, isSalesTax, isB2b);
                 UI.showNotification('Category updated successfully', 'success');
             } else {
                 // Add new category
-                const newId = Database.addCategory(name, isMonthly, defaultAmount, defaultType, folderId, showOnPl, isCogs, isDepreciation, isSalesTax);
+                const newId = Database.addCategory(name, isMonthly, defaultAmount, defaultType, folderId, showOnPl, isCogs, isDepreciation, isSalesTax, isB2b);
                 // Select the new category in the dropdown
                 this.refreshCategories();
                 document.getElementById('category').value = newId;
@@ -1619,6 +1687,7 @@ const App = {
         document.getElementById('categoryCogs').checked = !!category.is_cogs;
         document.getElementById('categoryDepreciation').checked = !!category.is_depreciation;
         document.getElementById('categorySalesTax').checked = !!category.is_sales_tax;
+        document.getElementById('categoryB2b').checked = !!category.is_b2b;
 
         document.getElementById('categoryModalTitle').textContent = 'Edit Category';
         document.getElementById('saveCategoryBtn').textContent = 'Save Changes';
@@ -1841,9 +1910,11 @@ const App = {
             document.getElementById('promptMonthPaidMonth').value = month;
             document.getElementById('promptMonthPaidYear').value = year;
 
-            // Update prompt title
+            // Update prompt title and paid today button text
             const title = newStatus === 'paid' ? 'Month Paid' : 'Month Received';
             document.getElementById('monthPaidPromptTitle').textContent = title;
+            document.getElementById('paidTodayBtn').textContent =
+                newStatus === 'paid' ? 'Paid Today' : 'Received Today';
 
             UI.showModal('monthPaidPromptModal');
         }
@@ -1878,6 +1949,35 @@ const App = {
                 UI.showNotification('Failed to update status', 'error');
                 this.refreshTransactions();
             }
+        }
+
+        UI.hideModal('monthPaidPromptModal');
+        this.pendingInlineStatusChange = null;
+    },
+
+    /**
+     * Quick "Paid Today" / "Received Today" - sets status, month_paid, and date_processed to today
+     */
+    confirmPaidToday() {
+        if (!this.pendingInlineStatusChange) return;
+
+        const { id, newStatus, selectElement } = this.pendingInlineStatusChange;
+        const today = Utils.getTodayDate();
+        const monthPaid = today.substring(0, 7);
+
+        try {
+            Database.updateTransactionStatus(id, newStatus, monthPaid);
+            Database.setTransactionDateProcessed(id, today);
+            selectElement.className = `status-select status-${newStatus}`;
+            this.refreshSummary();
+            this.refreshTransactions();
+            if (document.getElementById('cashflowTab').style.display !== 'none') this.refreshCashFlow();
+            if (document.getElementById('pnlTab').style.display !== 'none') this.refreshPnL();
+            UI.showNotification(`Marked as ${newStatus} today`, 'success');
+        } catch (error) {
+            console.error('Error updating status:', error);
+            UI.showNotification('Failed to update status', 'error');
+            this.refreshTransactions();
         }
 
         UI.hideModal('monthPaidPromptModal');
@@ -2590,6 +2690,16 @@ const App = {
             document.getElementById('loanConfigModalTitle').textContent = 'Add Loan';
             document.getElementById('loanStartDate').value = Utils.getTodayDate();
         }
+
+        // Show auto-create checkbox only for new loans
+        const autoCreateGroup = document.getElementById('loanAutoCreate').closest('.form-group');
+        if (editId) {
+            autoCreateGroup.style.display = 'none';
+        } else {
+            autoCreateGroup.style.display = '';
+            document.getElementById('loanAutoCreate').checked = true;
+        }
+
         UI.showModal('loanConfigModal');
         document.getElementById('loanName').focus();
     },
@@ -2618,6 +2728,9 @@ const App = {
         } else {
             const loanId = Database.addLoan(params);
             this.selectedLoanId = loanId;
+            if (document.getElementById('loanAutoCreate').checked) {
+                this._autoCreateLoanBudgetAndCategory(loanId, name, params);
+            }
             UI.showNotification('Loan added', 'success');
         }
 
@@ -2644,6 +2757,44 @@ const App = {
         }
         UI.hideModal('deleteLoanModal');
         this.deleteLoanTargetId = null;
+    },
+
+    /**
+     * Auto-create a budget expense and journal category for a new loan
+     */
+    _autoCreateLoanBudgetAndCategory(loanId, loanName, params) {
+        const schedule = Utils.computeAmortizationSchedule(
+            { principal: params.principal, annual_rate: params.annual_rate,
+              payments_per_year: params.payments_per_year, term_months: params.term_months,
+              start_date: params.start_date, first_payment_date: params.first_payment_date },
+            new Set(), {}
+        );
+        const monthlyPayment = schedule.length > 0 ? schedule[0].payment : 0;
+        if (monthlyPayment <= 0) return;
+
+        // Find or create a category named after the loan
+        let categories = Database.getCategories();
+        let cat = categories.find(c => c.name === loanName);
+        let catId;
+        if (!cat) {
+            catId = Database.addCategory(loanName, true, monthlyPayment, 'payable');
+        } else {
+            catId = cat.id;
+        }
+
+        // Compute start/end months from amortization schedule
+        const firstPayMonth = schedule[0].month;
+        const lastPayMonth = schedule[schedule.length - 1].month;
+
+        // Create budget expense for the loan payment
+        Database.addBudgetExpense(
+            `${loanName} Payment`,
+            monthlyPayment,
+            firstPayMonth,
+            lastPayMonth,
+            catId,
+            `Auto-created from loan #${loanId}`
+        );
     },
 
     // ==================== BUDGET HANDLERS ====================
@@ -3063,6 +3214,735 @@ const App = {
         UI.showNotification('Database saved successfully', 'success');
     },
 
+    // ==================== BREAK-EVEN ANALYSIS ====================
+
+    /**
+     * Get the effective timeline for break-even (local override or global)
+     * @returns {Object} {start, end}
+     */
+    getBreakevenTimeline(cfg) {
+        cfg = cfg || Database.getBreakevenConfig();
+        const local = cfg.timeline || {};
+        if (local.start || local.end) return local;
+        return this.getTimeline();
+    },
+
+    /**
+     * Refresh the entire break-even tab
+     */
+    refreshBreakeven() {
+        const cfg = Database.getBreakevenConfig();
+        const timeline = this.getBreakevenTimeline(cfg);
+
+        // Timeline banner
+        const banner = document.getElementById('beTimelineBanner');
+        if (timeline.start || timeline.end) {
+            const startLabel = timeline.start ? Utils.formatMonthShort(timeline.start) : 'Start';
+            const endLabel = timeline.end ? Utils.formatMonthShort(timeline.end) : 'Present';
+            const isLocal = (cfg.timeline && (cfg.timeline.start || cfg.timeline.end));
+            banner.textContent = `Timeline: ${startLabel} \u2013 ${endLabel}${isLocal ? ' (local override)' : ''}`;
+            banner.style.display = 'block';
+        } else {
+            banner.style.display = 'none';
+        }
+
+        // Compute monthly fixed costs
+        let months = [];
+        if (timeline.start && timeline.end) {
+            months = Utils.generateMonthRange(timeline.start, timeline.end);
+        } else {
+            // Fallback: use current month only
+            months = [Utils.getCurrentMonth()];
+        }
+
+        // Gather asset depreciation and loan interest by month
+        const assetDeprByMonth = Database.getAssetDepreciationByMonth(null);
+        const loanInterestByMonth = Database.getLoanInterestByMonth(null);
+
+        // Compute average monthly fixed costs across the timeline (per-source breakdown)
+        let totalBudget = 0, totalDepr = 0, totalLoan = 0;
+        months.forEach(m => {
+            if (cfg.includeBudgetExpenses) totalBudget += Database.getBudgetFixedCostsForMonth(m);
+            if (cfg.includeAssetDepreciation) totalDepr += (assetDeprByMonth[m] || 0);
+            if (cfg.includeLoanInterest) totalLoan += (loanInterestByMonth[m] || 0);
+        });
+        const totalAssetCost = cfg.includeAssetCosts ? Database.getTotalAssetPurchaseCost() : 0;
+        const n = months.length || 1;
+        const assetCostPerMonth = totalAssetCost / n;
+        const avgMonthlyFixed = (totalBudget + totalDepr + totalLoan) / n + assetCostPerMonth;
+        const fixedBreakdown = {
+            budget: totalBudget / n,
+            depreciation: totalDepr / n,
+            loanInterest: totalLoan / n,
+            assetCosts: assetCostPerMonth,
+        };
+
+        // Core break-even calculation
+        const beResult = Utils.computeBreakEven(cfg, avgMonthlyFixed);
+
+        // Render summary and channel breakdown
+        UI.renderBreakevenSummaryCards(beResult, fixedBreakdown, cfg);
+        UI.renderBreakevenChannelBreakdown(beResult, cfg);
+
+        // Chart data points
+        this._destroyBeCharts();
+
+        if (beResult.isValid) {
+            const monthCount = months.length;
+            const increment = cfg.unitIncrement || 100;
+            const b2b = cfg.b2b || {};
+            const b2bMonthly = (b2b.enabled && b2b.monthlyUnits > 0) ? b2b.monthlyUnits : 0;
+            const b2bTotal = b2bMonthly * monthCount;
+
+            const points = Utils.computeBreakEvenChartPoints(
+                cfg, avgMonthlyFixed, beResult.consumerUnitsNeeded || 0, increment, monthCount
+            );
+            const consumerBETotal = Math.ceil((beResult.consumerUnitsNeeded || 0) * monthCount);
+
+            // Compute exact break-even point for the table (not injected into chart)
+            const consumer = cfg.consumer || {};
+            const consumerPrice = consumer.enabled ? (consumer.avgPrice || 0) : 0;
+            const consumerCogs = consumer.enabled ? (consumer.avgCogs || 0) : 0;
+            const b2bRate = b2b.enabled ? (b2b.ratePerUnit || 0) : 0;
+            const b2bCogs = b2b.enabled ? (b2b.cogsPerUnit || 0) : 0;
+            const fixedTotal = Math.round(avgMonthlyFixed * monthCount * 100) / 100;
+            const beRevenue = (b2bTotal * b2bRate) + (consumerBETotal * consumerPrice);
+            const beVarCosts = (b2bTotal * b2bCogs) + (consumerBETotal * consumerCogs);
+            const exactBEPoint = {
+                consumerUnits: consumerBETotal,
+                b2bUnits: b2bTotal,
+                revenue: Math.round(beRevenue * 100) / 100,
+                variableCosts: Math.round(beVarCosts * 100) / 100,
+                fixedCosts: fixedTotal,
+                totalCosts: Math.round((beVarCosts + fixedTotal) * 100) / 100
+            };
+
+            this._renderBeBreakevenChart(points);
+            UI.renderBreakevenDataTable(points, b2bTotal, increment, consumerBETotal, exactBEPoint);
+
+            // Timeline chart
+            let timelinePoints = null;
+            if (months.length > 1) {
+                timelinePoints = Utils.computeBreakevenTimeline(
+                    cfg, months, assetDeprByMonth, loanInterestByMonth,
+                    (m) => Database.getBudgetFixedCostsForMonth(m)
+                );
+                const actualRevenueByMonth = Database.getActualRevenueByMonth();
+                this._renderBeTimelineChart(timelinePoints, actualRevenueByMonth);
+            }
+
+            // Progress tracker ("as of" analysis)
+            this.refreshBreakevenProgress(beResult, cfg, months, timelinePoints);
+        } else {
+            UI.renderBreakevenDataTable([], 0, 100);
+            document.getElementById('beProgressSection').style.display = 'none';
+        }
+    },
+
+    /**
+     * Destroy existing Chart.js instances
+     */
+    _destroyBeCharts() {
+        if (this._beChartBreakeven) {
+            this._beChartBreakeven.destroy();
+            this._beChartBreakeven = null;
+        }
+        if (this._beChartTimeline) {
+            this._beChartTimeline.destroy();
+            this._beChartTimeline = null;
+        }
+        if (this._beChartProgress) {
+            this._beChartProgress.destroy();
+            this._beChartProgress = null;
+        }
+    },
+
+    /**
+     * Render the break-even chart (revenue vs total costs, consumer units on X axis)
+     * @param {Array} points - Chart data points with consumerUnits field
+     */
+    _renderBeBreakevenChart(points) {
+        const canvas = document.getElementById('beBreakevenChart');
+        if (!canvas || typeof Chart === 'undefined') return;
+
+        const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#4a90a4';
+        const dangerColor = '#dc3545';
+        const successColor = '#28a745';
+        const warningColor = '#f59e0b';
+        const grayColor = '#6c757d';
+
+        // Find break-even index: first point where revenue >= total costs
+        const beIdx = points.findIndex(p => p.revenue >= p.totalCosts);
+
+        // Build pointRadius and pointBackgroundColor arrays for break-even emphasis
+        const defaultRadius = 2;
+        const beRadius = 6;
+        const revenueRadii = points.map((_, i) => i === beIdx ? beRadius : defaultRadius);
+        const costRadii = points.map((_, i) => i === beIdx ? beRadius : defaultRadius);
+        const revenueBgColors = points.map((_, i) => i === beIdx ? primaryColor : successColor);
+        const costBgColors = points.map((_, i) => i === beIdx ? primaryColor : dangerColor);
+
+        this._beChartBreakeven = new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels: points.map(p => p.consumerUnits.toLocaleString()),
+                datasets: [
+                    {
+                        label: 'Revenue',
+                        data: points.map(p => p.revenue),
+                        borderColor: successColor,
+                        backgroundColor: successColor + '20',
+                        fill: false,
+                        tension: 0.1,
+                        pointRadius: revenueRadii,
+                        pointBackgroundColor: revenueBgColors,
+                        pointBorderColor: revenueBgColors
+                    },
+                    {
+                        label: 'Total Costs',
+                        data: points.map(p => p.totalCosts),
+                        borderColor: dangerColor,
+                        backgroundColor: dangerColor + '20',
+                        fill: false,
+                        tension: 0.1,
+                        pointRadius: costRadii,
+                        pointBackgroundColor: costBgColors,
+                        pointBorderColor: costBgColors
+                    },
+                    {
+                        label: 'Variable Costs',
+                        data: points.map(p => p.variableCosts),
+                        borderColor: warningColor,
+                        borderDash: [4, 4],
+                        fill: false,
+                        tension: 0.1,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Fixed Costs',
+                        data: points.map(p => p.fixedCosts),
+                        borderColor: grayColor,
+                        borderDash: [5, 5],
+                        fill: false,
+                        tension: 0,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: {
+                        title: { display: true, text: 'Consumer Units Sold' },
+                        grid: { display: false }
+                    },
+                    y: {
+                        title: { display: true, text: 'Amount ($)' },
+                        ticks: {
+                            callback: (v) => '$' + v.toLocaleString()
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                        }
+                    }
+                }
+            }
+        });
+    },
+
+    /**
+     * Render the monthly timeline chart comparing actual revenue to break-even revenue needed
+     * @param {Array} timelinePoints - From Utils.computeBreakevenTimeline()
+     * @param {Object} actualRevenueByMonth - { 'YYYY-MM': totalRevenue } from P&L
+     */
+    _renderBeTimelineChart(timelinePoints, actualRevenueByMonth) {
+        const canvas = document.getElementById('beTimelineChart');
+        if (!canvas || typeof Chart === 'undefined') return;
+
+        const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#4a90a4';
+        const successColor = '#28a745';
+
+        this._beChartTimeline = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: timelinePoints.map(p => Utils.formatMonthShort(p.month)),
+                datasets: [
+                    {
+                        label: 'Actual Revenue',
+                        data: timelinePoints.map(p => actualRevenueByMonth[p.month] || 0),
+                        backgroundColor: successColor + '60',
+                        borderColor: successColor,
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Revenue Needed (excl. B2B)',
+                        data: timelinePoints.map(p => p.consumerBERevenue),
+                        backgroundColor: primaryColor + '40',
+                        borderColor: primaryColor,
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: { grid: { display: false } },
+                    y: {
+                        title: { display: true, text: 'Revenue ($)' },
+                        ticks: {
+                            callback: (v) => '$' + v.toLocaleString()
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                        }
+                    }
+                }
+            }
+        });
+    },
+
+    /**
+     * Refresh the break-even progress tracker ("as of" analysis)
+     * @param {Object} beResult - From Utils.computeBreakEven()
+     * @param {Object} cfg - Break-even config
+     * @param {Array} months - Full timeline months array
+     */
+    refreshBreakevenProgress(beResult, cfg, months, timelinePoints) {
+        const section = document.getElementById('beProgressSection');
+
+        if (!beResult || !beResult.isValid || !months || months.length < 2) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = '';
+
+        // Store state for dropdown change handler
+        this._beProgressState = { beResult, cfg, months, timelinePoints };
+
+        // Populate month dropdown
+        const monthSelect = document.getElementById('beProgressMonth');
+        const currentMonth = Utils.getCurrentMonth();
+        const prevValue = monthSelect.value;
+
+        // Only months up to current month (can't track future progress)
+        const availableMonths = months.filter(m => m <= currentMonth);
+        if (availableMonths.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+
+        monthSelect.innerHTML = availableMonths.map(m =>
+            `<option value="${m}">${Utils.formatMonthShort(m)}</option>`
+        ).join('');
+
+        // Restore previous selection or default to latest available month
+        const defaultMonth = prevValue && availableMonths.includes(prevValue) ? prevValue : availableMonths[availableMonths.length - 1];
+        monthSelect.value = defaultMonth;
+
+        this._computeAndRenderProgress(beResult, cfg, months, monthSelect.value, this._beProgressState.timelinePoints);
+    },
+
+    /**
+     * Compute progress data and render cards + chart
+     */
+    _computeAndRenderProgress(beResult, cfg, months, asOfMonth, timelinePoints) {
+        // Pull from P&L (respects overrides, works with all old entries)
+        const plRevenue = Database.getPLRevenueByMonth();
+        const totalMonths = months.length;
+        const timelineStart = months[0];
+        const timelineEnd = months[months.length - 1];
+
+        // Elapsed months (from start through asOfMonth)
+        const elapsedMonths = months.filter(m => m <= asOfMonth);
+        const elapsedCount = elapsedMonths.length;
+        const remainingCount = totalMonths - elapsedCount;
+
+        // Actual cumulative revenue through asOfMonth (from P&L data)
+        let actualTotal = 0, actualB2b = 0, actualConsumer = 0;
+        elapsedMonths.forEach(m => {
+            actualTotal += (plRevenue.total[m] || 0);
+            actualB2b += (plRevenue.b2b[m] || 0);
+            actualConsumer += (plRevenue.consumer[m] || 0);
+        });
+
+        // Total break-even revenue needed — use per-month targets if available
+        let totalBERevenue, targetByNow;
+        if (timelinePoints && timelinePoints.length > 0) {
+            // Sum per-month break-even revenue from timeline (accounts for variable fixed costs)
+            totalBERevenue = timelinePoints.reduce((sum, tp) => sum + tp.revenue, 0);
+            // Target by now = sum of per-month targets for elapsed months
+            targetByNow = 0;
+            elapsedMonths.forEach(m => {
+                const tp = timelinePoints.find(p => p.month === m);
+                if (tp) targetByNow += tp.revenue;
+            });
+        } else {
+            // Fallback: flat average
+            totalBERevenue = beResult.breakEvenRevenue * totalMonths;
+            targetByNow = (totalBERevenue / totalMonths) * elapsedCount;
+        }
+
+        // Remaining revenue needed
+        const remainingRevenue = Math.max(0, totalBERevenue - actualTotal);
+
+        // Monthly revenue needed going forward
+        const monthlyNeeded = remainingCount > 0 ? remainingRevenue / remainingCount : 0;
+
+        // On track?
+        const onTrack = actualTotal >= targetByNow;
+
+        // Build per-month chart data for the full timeline
+        const chartMonths = [];
+        const chartActual = [];
+        const chartTarget = [];
+        const chartProjected = []; // Placeholder for future projected data tab
+        const chartCumulativeActual = [];
+        const chartCumulativePace = [];
+        let cumActual = 0, cumPace = 0;
+
+        months.forEach(m => {
+            chartMonths.push(Utils.formatMonthShort(m));
+            const monthActual = plRevenue.consumer[m] || 0;
+            chartActual.push(Math.round(monthActual * 100) / 100);
+
+            // Consumer BE revenue target for this month (excludes B2B)
+            let monthTarget = 0;
+            if (timelinePoints) {
+                const tp = timelinePoints.find(p => p.month === m);
+                if (tp) monthTarget = tp.consumerBERevenue;
+            } else {
+                monthTarget = beResult.breakEvenRevenue;
+            }
+            chartTarget.push(Math.round(monthTarget * 100) / 100);
+
+            // Projected: placeholder (null = not shown on chart)
+            chartProjected.push(null);
+
+            // Cumulative lines
+            cumActual += monthActual;
+            cumPace += monthTarget;
+            chartCumulativeActual.push(Math.round(cumActual * 100) / 100);
+            chartCumulativePace.push(Math.round(cumPace * 100) / 100);
+        });
+
+        const progressData = {
+            actualB2b: Math.round(actualB2b * 100) / 100,
+            actualConsumer: Math.round(actualConsumer * 100) / 100,
+            actualTotal: Math.round(actualTotal * 100) / 100,
+            targetByNow: Math.round(targetByNow * 100) / 100,
+            totalBERevenue: Math.round(totalBERevenue * 100) / 100,
+            remainingRevenue: Math.round(remainingRevenue * 100) / 100,
+            monthlyNeeded: Math.round(monthlyNeeded * 100) / 100,
+            onTrack,
+            elapsedCount,
+            remainingCount,
+            totalMonths,
+            asOfMonth,
+            timelineStart,
+            timelineEnd,
+            // Per-month chart arrays
+            chartMonths,
+            chartActual,
+            chartTarget,
+            chartProjected,
+            chartCumulativeActual,
+            chartCumulativePace
+        };
+
+        UI.renderBreakevenProgressCards(progressData);
+        this._renderBeProgressChart(progressData);
+    },
+
+    /**
+     * Render the break-even progress chart: monthly bars (actual vs target) + cumulative pace line
+     */
+    _renderBeProgressChart(data) {
+        const canvas = document.getElementById('beProgressChart');
+        if (!canvas || typeof Chart === 'undefined') return;
+
+        if (this._beChartProgress) {
+            this._beChartProgress.destroy();
+            this._beChartProgress = null;
+        }
+
+        const successColor = '#28a745';
+        const projectedColor = '#17a2b8';
+        const paceColor = '#1a3a4a';
+
+        const datasets = [
+            {
+                type: 'line',
+                label: 'Revenue',
+                data: data.chartCumulativeActual,
+                borderColor: successColor,
+                backgroundColor: successColor + '20',
+                fill: true,
+                tension: 0.2,
+                pointRadius: 4,
+                pointBackgroundColor: successColor,
+                borderWidth: 2,
+                order: 2
+            },
+            {
+                type: 'line',
+                label: 'Projected Revenue',
+                data: data.chartProjected,
+                borderColor: projectedColor,
+                backgroundColor: projectedColor + '15',
+                fill: true,
+                tension: 0.2,
+                pointRadius: 4,
+                pointBackgroundColor: projectedColor,
+                borderWidth: 2,
+                borderDash: [5, 5],
+                order: 1
+            },
+            {
+                type: 'line',
+                label: 'Monthly Pace',
+                data: data.chartCumulativePace,
+                borderColor: paceColor,
+                backgroundColor: paceColor,
+                fill: false,
+                tension: 0.2,
+                pointRadius: 4,
+                pointBackgroundColor: paceColor,
+                borderWidth: 2,
+                order: 3
+            }
+        ];
+
+        this._beChartProgress = new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels: data.chartMonths,
+                datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: {
+                        grid: { display: false }
+                    },
+                    y: {
+                        title: { display: true, text: 'Cumulative Revenue ($)' },
+                        ticks: {
+                            callback: (v) => '$' + v.toLocaleString()
+                        },
+                        beginAtZero: true
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => {
+                                if (ctx.parsed.y === null || ctx.parsed.y === 0) return null;
+                                return `${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                            }
+                        }
+                    },
+                    legend: {
+                        labels: {
+                            filter: (item) => {
+                                // Hide 'Projected Revenue' from legend if all values are null
+                                if (item.text === 'Projected Revenue') {
+                                    return data.chartProjected.some(v => v !== null);
+                                }
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    },
+
+    /**
+     * Open the break-even config modal and populate fields
+     */
+    openBeConfigModal() {
+        const cfg = Database.getBreakevenConfig();
+
+        // Populate year dropdowns FIRST (before setting values)
+        const years = Utils.generateYearOptions();
+        ['beTimelineStartYear', 'beTimelineEndYear'].forEach(id => {
+            const sel = document.getElementById(id);
+            sel.innerHTML = '<option value="">Year...</option>';
+            years.forEach(y => {
+                const opt = document.createElement('option');
+                opt.value = y;
+                opt.textContent = y;
+                sel.appendChild(opt);
+            });
+        });
+
+        // Timeline override values
+        const tl = cfg.timeline || {};
+        if (tl.start) {
+            const [y, m] = tl.start.split('-');
+            document.getElementById('beTimelineStartMonth').value = m;
+            document.getElementById('beTimelineStartYear').value = y;
+        } else {
+            document.getElementById('beTimelineStartMonth').value = '';
+            document.getElementById('beTimelineStartYear').value = '';
+        }
+        if (tl.end) {
+            const [y, m] = tl.end.split('-');
+            document.getElementById('beTimelineEndMonth').value = m;
+            document.getElementById('beTimelineEndYear').value = y;
+        } else {
+            document.getElementById('beTimelineEndMonth').value = '';
+            document.getElementById('beTimelineEndYear').value = '';
+        }
+
+        // Fixed cost toggles
+        document.getElementById('beIncludeBudget').checked = cfg.includeBudgetExpenses !== false;
+        document.getElementById('beIncludeDepreciation').checked = cfg.includeAssetDepreciation !== false;
+        document.getElementById('beIncludeLoanInterest').checked = cfg.includeLoanInterest === true;
+        document.getElementById('beIncludeAssetCosts').checked = cfg.includeAssetCosts === true;
+
+        // Consumer channel
+        const consumer = cfg.consumer || {};
+        document.getElementById('beConsumerEnabled').checked = consumer.enabled !== false;
+        document.getElementById('beConsumerPrice').value = consumer.avgPrice || '';
+        document.getElementById('beConsumerCogs').value = consumer.avgCogs || '';
+        document.getElementById('beConsumerFields').style.display = consumer.enabled !== false ? 'flex' : 'none';
+
+        // B2B channel
+        const b2b = cfg.b2b || {};
+        document.getElementById('beB2bEnabled').checked = b2b.enabled === true;
+        document.getElementById('beB2bUnits').value = b2b.monthlyUnits || '';
+        document.getElementById('beB2bRate').value = b2b.ratePerUnit || '';
+        document.getElementById('beB2bCogs').value = b2b.cogsPerUnit || '';
+        document.getElementById('beB2bFields').style.display = b2b.enabled ? 'flex' : 'none';
+
+        // Unit increment
+        document.getElementById('beUnitIncrement').value = cfg.unitIncrement || 100;
+
+        // Update CM previews and cost hints
+        this._updateBeCmPreview('consumer');
+        this._updateBeCmPreview('b2b');
+        this._updateBeFixedCostHints();
+
+        UI.showModal('beConfigModal');
+    },
+
+    /**
+     * Update contribution margin preview for a channel
+     * @param {string} channel - 'consumer' or 'b2b'
+     */
+    _updateBeCmPreview(channel) {
+        if (channel === 'consumer') {
+            const price = parseFloat(document.getElementById('beConsumerPrice').value) || 0;
+            const cogs = parseFloat(document.getElementById('beConsumerCogs').value) || 0;
+            document.getElementById('beConsumerCmPreview').textContent = Utils.formatCurrency(price - cogs);
+        } else {
+            const rate = parseFloat(document.getElementById('beB2bRate').value) || 0;
+            const cogs = parseFloat(document.getElementById('beB2bCogs').value) || 0;
+            document.getElementById('beB2bCmPreview').textContent = Utils.formatCurrency(rate - cogs);
+        }
+    },
+
+    /**
+     * Update fixed cost source hints in the config modal.
+     * Shows average $/mo across the break-even timeline (not just current month).
+     */
+    _updateBeFixedCostHints() {
+        const cfg = Database.getBreakevenConfig();
+        const timeline = this.getBreakevenTimeline(cfg);
+
+        let months = [];
+        if (timeline.start && timeline.end) {
+            months = Utils.generateMonthRange(timeline.start, timeline.end);
+        } else {
+            months = [Utils.getCurrentMonth()];
+        }
+
+        // Budget expenses: average across timeline (respects per-expense start/end dates)
+        let budgetTotal = 0;
+        months.forEach(m => { budgetTotal += Database.getBudgetFixedCostsForMonth(m); });
+        const budgetAvg = months.length > 0 ? budgetTotal / months.length : 0;
+        document.getElementById('beBudgetHint').textContent = budgetAvg > 0
+            ? `(${Utils.formatCurrency(budgetAvg)}/mo avg)` : '';
+
+        // Asset depreciation: average across timeline
+        const deprByMonth = Database.getAssetDepreciationByMonth(null);
+        let deprTotal = 0;
+        months.forEach(m => { deprTotal += (deprByMonth[m] || 0); });
+        const deprAvg = months.length > 0 ? deprTotal / months.length : 0;
+        document.getElementById('beDeprHint').textContent = deprAvg > 0
+            ? `(${Utils.formatCurrency(deprAvg)}/mo avg)` : '';
+
+        // Loan interest: average across timeline
+        const loanByMonth = Database.getLoanInterestByMonth(null);
+        let loanTotal = 0;
+        months.forEach(m => { loanTotal += (loanByMonth[m] || 0); });
+        const loanAvg = months.length > 0 ? loanTotal / months.length : 0;
+        document.getElementById('beLoanHint').textContent = loanAvg > 0
+            ? `(${Utils.formatCurrency(loanAvg)}/mo avg)` : '';
+
+        // Asset purchase costs: total amortized across timeline
+        const totalAssetCost = Database.getTotalAssetPurchaseCost();
+        const assetCostAvg = months.length > 0 ? totalAssetCost / months.length : 0;
+        document.getElementById('beAssetCostHint').textContent = assetCostAvg > 0
+            ? `(${Utils.formatCurrency(assetCostAvg)}/mo avg)` : '';
+    },
+
+    /**
+     * Save break-even config from modal form
+     */
+    handleSaveBeConfig() {
+        // Timeline override
+        const startM = document.getElementById('beTimelineStartMonth').value;
+        const startY = document.getElementById('beTimelineStartYear').value;
+        const endM = document.getElementById('beTimelineEndMonth').value;
+        const endY = document.getElementById('beTimelineEndYear').value;
+
+        const timeline = {
+            start: (startM && startY) ? `${startY}-${startM}` : null,
+            end: (endM && endY) ? `${endY}-${endM}` : null
+        };
+
+        const cfg = {
+            timeline,
+            includeBudgetExpenses: document.getElementById('beIncludeBudget').checked,
+            includeAssetDepreciation: document.getElementById('beIncludeDepreciation').checked,
+            includeLoanInterest: document.getElementById('beIncludeLoanInterest').checked,
+            includeAssetCosts: document.getElementById('beIncludeAssetCosts').checked,
+            consumer: {
+                enabled: document.getElementById('beConsumerEnabled').checked,
+                avgPrice: parseFloat(document.getElementById('beConsumerPrice').value) || 0,
+                avgCogs: parseFloat(document.getElementById('beConsumerCogs').value) || 0
+            },
+            b2b: {
+                enabled: document.getElementById('beB2bEnabled').checked,
+                monthlyUnits: parseInt(document.getElementById('beB2bUnits').value) || 0,
+                ratePerUnit: parseFloat(document.getElementById('beB2bRate').value) || 0,
+                cogsPerUnit: parseFloat(document.getElementById('beB2bCogs').value) || 0
+            },
+            unitIncrement: parseInt(document.getElementById('beUnitIncrement').value) || 100
+        };
+
+        Database.setBreakevenConfig(cfg);
+        UI.hideModal('beConfigModal');
+        this.refreshBreakeven();
+    },
+
     /**
      * Download a blob as a file
      * @param {Blob} blob - The file blob
@@ -3098,9 +3978,8 @@ const App = {
             const owner = Database.getJournalOwner();
             document.getElementById('journalOwner').value = owner;
             UI.updateJournalTitle(owner);
-            if (owner) {
-                document.getElementById('journalOwner').style.width = Math.max(120, (owner.length + 2) * 14) + 'px';
-            }
+            // Re-trigger auto-size measurement
+            document.getElementById('journalOwner').dispatchEvent(new Event('input'));
 
             // Repopulate year dropdowns (in case data spans different years)
             UI.populateYearDropdowns();

@@ -39,11 +39,19 @@
                         <div class="gear-popover-section">
                             <label class="gear-label">Theme</label>
                             <select id="themePreset" title="Theme">
-                                <option value="default">Default</option>
-                                <option value="ocean">Ocean</option>
-                                <option value="forest">Forest</option>
-                                <option value="sunset">Sunset</option>
-                                <option value="midnight">Midnight</option>
+                                <optgroup label="Color Themes">
+                                    <option value="default">Default</option>
+                                    <option value="ocean">Ocean</option>
+                                    <option value="forest">Forest</option>
+                                    <option value="sunset">Sunset</option>
+                                    <option value="midnight">Midnight</option>
+                                </optgroup>
+                                <optgroup label="Design Styles">
+                                    <option value="modern">Ultra Modern</option>
+                                    <option value="futuristic">Futuristic</option>
+                                    <option value="vintage">Vintage Ledger</option>
+                                    <option value="accounting">Accounting</option>
+                                </optgroup>
                                 <option value="custom">Custom...</option>
                             </select>
                         </div>
@@ -148,6 +156,7 @@
             <button class="main-tab" data-tab="assets">Assets &amp; Equity</button>
             <button class="main-tab" data-tab="loan">Loans</button>
             <button class="main-tab" data-tab="budget">Budget</button>
+            <button class="main-tab" data-tab="breakeven">Break-Even</button>
         </nav>
 
         <!-- Journal Tab -->
@@ -466,6 +475,187 @@
                     </div>
                 </div>
             </section>
+        </div>
+
+        <!-- Break-Even Analysis Tab -->
+        <div id="breakevenTab" style="display: none;">
+            <section class="be-section">
+                <div class="be-header">
+                    <h3>Break-Even Analysis</h3>
+                    <div class="be-controls">
+                        <button id="beConfigBtn" class="btn btn-secondary btn-small">Configure</button>
+                    </div>
+                </div>
+                <div id="beTimelineBanner" class="be-timeline-banner" style="display:none;"></div>
+                <div id="beSummaryCards" class="be-summary-cards">
+                    <p class="empty-state">Configure your break-even parameters to get started.</p>
+                </div>
+                <div id="beChannelBreakdown" class="be-channel-breakdown"></div>
+                <div class="be-charts-row">
+                    <div class="be-chart-wrapper">
+                        <h4>Break-Even Chart</h4>
+                        <canvas id="beBreakevenChart"></canvas>
+                    </div>
+                    <div class="be-chart-wrapper">
+                        <h4>Monthly Timeline</h4>
+                        <canvas id="beTimelineChart"></canvas>
+                    </div>
+                </div>
+                <div id="beDataTable" class="be-data-table-wrapper"></div>
+            </section>
+            <section class="be-section be-progress-section" id="beProgressSection" style="display:none;">
+                <div class="be-header">
+                    <h3>Break-Even Progress</h3>
+                    <div class="be-controls">
+                        <label style="font-size: 0.875rem; font-weight: 500;">As of:
+                            <select id="beProgressMonth" class="be-progress-month-select"></select>
+                        </label>
+                    </div>
+                </div>
+                <div id="beProgressCards" class="be-summary-cards">
+                    <p class="empty-state">Configure break-even parameters and add journal entries to track progress.</p>
+                </div>
+                <div class="be-charts-row">
+                    <div class="be-chart-wrapper">
+                        <h4>Revenue vs Break-Even Pace</h4>
+                        <canvas id="beProgressChart"></canvas>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Break-Even Config Modal -->
+        <div id="beConfigModal" class="modal">
+            <div class="modal-content modal-wide">
+                <h3>Break-Even Configuration</h3>
+                <form id="beConfigForm">
+                    <fieldset class="be-fieldset">
+                        <legend>Timeline Override</legend>
+                        <p class="field-hint">Leave blank to use global timeline from settings.</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Start</label>
+                                <div class="month-year-select">
+                                    <select id="beTimelineStartMonth">
+                                        <option value="">Month...</option>
+                                        <option value="01">Jan</option><option value="02">Feb</option>
+                                        <option value="03">Mar</option><option value="04">Apr</option>
+                                        <option value="05">May</option><option value="06">Jun</option>
+                                        <option value="07">Jul</option><option value="08">Aug</option>
+                                        <option value="09">Sep</option><option value="10">Oct</option>
+                                        <option value="11">Nov</option><option value="12">Dec</option>
+                                    </select>
+                                    <select id="beTimelineStartYear">
+                                        <option value="">Year...</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>End</label>
+                                <div class="month-year-select">
+                                    <select id="beTimelineEndMonth">
+                                        <option value="">Month...</option>
+                                        <option value="01">Jan</option><option value="02">Feb</option>
+                                        <option value="03">Mar</option><option value="04">Apr</option>
+                                        <option value="05">May</option><option value="06">Jun</option>
+                                        <option value="07">Jul</option><option value="08">Aug</option>
+                                        <option value="09">Sep</option><option value="10">Oct</option>
+                                        <option value="11">Nov</option><option value="12">Dec</option>
+                                    </select>
+                                    <select id="beTimelineEndYear">
+                                        <option value="">Year...</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" id="beClearTimelineBtn" class="btn btn-small btn-secondary">Clear Timeline</button>
+                    </fieldset>
+                    <fieldset class="be-fieldset">
+                        <legend>Fixed Cost Sources</legend>
+                        <div class="be-toggle-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="beIncludeBudget" checked>
+                                <span>Monthly Budget Expenses</span>
+                                <span id="beBudgetHint" class="be-cost-hint"></span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="beIncludeDepreciation" checked>
+                                <span>Fixed Asset Depreciation</span>
+                                <span id="beDeprHint" class="be-cost-hint"></span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="beIncludeLoanInterest">
+                                <span>Loan Interest</span>
+                                <span id="beLoanHint" class="be-cost-hint"></span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="beIncludeAssetCosts">
+                                <span>Asset Purchase Costs</span>
+                                <span id="beAssetCostHint" class="be-cost-hint"></span>
+                            </label>
+                        </div>
+                    </fieldset>
+                    <fieldset class="be-fieldset">
+                        <legend>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="beConsumerEnabled" checked>
+                                <span>Consumer Sales Channel</span>
+                            </label>
+                        </legend>
+                        <div id="beConsumerFields" class="form-row">
+                            <div class="form-group">
+                                <label for="beConsumerPrice">Avg. Selling Price</label>
+                                <input type="number" id="beConsumerPrice" step="0.01" min="0" placeholder="0.00">
+                            </div>
+                            <div class="form-group">
+                                <label for="beConsumerCogs">Avg. COGS</label>
+                                <input type="number" id="beConsumerCogs" step="0.01" min="0" placeholder="0.00">
+                            </div>
+                            <div class="form-group">
+                                <label>CM / unit</label>
+                                <span id="beConsumerCmPreview" class="be-cm-preview">$0.00</span>
+                            </div>
+                        </div>
+                    </fieldset>
+                    <fieldset class="be-fieldset">
+                        <legend>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="beB2bEnabled">
+                                <span>B2B Contract Channel</span>
+                            </label>
+                        </legend>
+                        <div id="beB2bFields" class="form-row" style="display:none;">
+                            <div class="form-group">
+                                <label for="beB2bUnits">Monthly Units</label>
+                                <input type="number" id="beB2bUnits" min="0" placeholder="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="beB2bRate">Rate / Unit</label>
+                                <input type="number" id="beB2bRate" step="0.01" min="0" placeholder="0.00">
+                            </div>
+                            <div class="form-group">
+                                <label for="beB2bCogs">COGS / Unit</label>
+                                <input type="number" id="beB2bCogs" step="0.01" min="0" placeholder="0.00">
+                            </div>
+                            <div class="form-group">
+                                <label>CM / unit</label>
+                                <span id="beB2bCmPreview" class="be-cm-preview">$0.00</span>
+                            </div>
+                        </div>
+                    </fieldset>
+                    <fieldset class="be-fieldset">
+                        <legend>Chart Settings</legend>
+                        <div class="form-group" style="max-width:200px;">
+                            <label for="beUnitIncrement">Unit Axis Increment</label>
+                            <input type="number" id="beUnitIncrement" min="1" value="100" placeholder="100">
+                        </div>
+                    </fieldset>
+                    <div class="form-actions">
+                        <button type="button" id="cancelBeConfigBtn" class="btn btn-secondary">Cancel</button>
+                        <button type="submit" id="saveBeConfigBtn" class="btn btn-primary">Save &amp; Calculate</button>
+                    </div>
+                </form>
+            </div>
         </div>
 
         <!-- Budget Expense Modal -->
@@ -796,6 +986,12 @@
                             <input type="text" id="loanNotes" placeholder="Optional notes">
                         </div>
                     </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="loanAutoCreate" checked>
+                            Auto-create budget expense & journal category
+                        </label>
+                    </div>
                     <div class="form-actions">
                         <button type="button" id="cancelLoanConfigBtn" class="btn btn-secondary">Cancel</button>
                         <button type="submit" id="saveLoanConfigBtn" class="btn btn-primary">Save</button>
@@ -887,6 +1083,10 @@
                         <label class="checkbox-label" style="padding-left: 24px;">
                             <input type="checkbox" id="categorySalesTax">
                             <span>Sales Tax</span>
+                        </label>
+                        <label class="checkbox-label" style="padding-left: 24px;">
+                            <input type="checkbox" id="categoryB2b">
+                            <span>B2B Sales</span>
                         </label>
                     </div>
                     <div class="form-actions">
@@ -1038,6 +1238,7 @@
                         </select>
                     </div>
                 </div>
+                <button type="button" id="paidTodayBtn" class="btn btn-primary" style="width:100%; margin-bottom: 12px;">Paid Today</button>
                 <div class="form-actions">
                     <button type="button" id="cancelMonthPaidPromptBtn" class="btn btn-secondary">Cancel</button>
                     <button type="button" id="confirmMonthPaidPromptBtn" class="btn btn-primary">Confirm</button>
@@ -1134,6 +1335,8 @@
 
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
     <script src="js/utils.js"></script>
     <script src="js/database.js"></script>
     <script src="js/ui.js"></script>

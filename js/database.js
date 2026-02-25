@@ -70,6 +70,7 @@ const Database = {
                 is_cogs INTEGER DEFAULT 0,
                 is_depreciation INTEGER DEFAULT 0,
                 is_sales_tax INTEGER DEFAULT 0,
+                is_b2b INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (folder_id) REFERENCES category_folders(id)
             )
@@ -318,6 +319,13 @@ const Database = {
             this.db.run('ALTER TABLE categories ADD COLUMN is_sales_tax INTEGER DEFAULT 0');
         }
 
+        // Add is_b2b flag to categories
+        try {
+            this.db.exec('SELECT is_b2b FROM categories LIMIT 1');
+        } catch (e) {
+            this.db.run('ALTER TABLE categories ADD COLUMN is_b2b INTEGER DEFAULT 0');
+        }
+
         // Create balance_sheet_assets table
         this.db.run(`
             CREATE TABLE IF NOT EXISTS balance_sheet_assets (
@@ -536,10 +544,10 @@ const Database = {
      * @param {number|null} folderId - Folder ID
      * @returns {number} New category ID
      */
-    addCategory(name, isMonthly = false, defaultAmount = null, defaultType = null, folderId = null, showOnPl = false, isCogs = false, isDepreciation = false, isSalesTax = false) {
+    addCategory(name, isMonthly = false, defaultAmount = null, defaultType = null, folderId = null, showOnPl = false, isCogs = false, isDepreciation = false, isSalesTax = false, isB2b = false) {
         this.db.run(
-            'INSERT INTO categories (name, is_monthly, default_amount, default_type, folder_id, show_on_pl, is_cogs, is_depreciation, is_sales_tax) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [name.trim(), isMonthly ? 1 : 0, defaultAmount, defaultType, folderId, showOnPl ? 1 : 0, isCogs ? 1 : 0, isDepreciation ? 1 : 0, isSalesTax ? 1 : 0]
+            'INSERT INTO categories (name, is_monthly, default_amount, default_type, folder_id, show_on_pl, is_cogs, is_depreciation, is_sales_tax, is_b2b) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [name.trim(), isMonthly ? 1 : 0, defaultAmount, defaultType, folderId, showOnPl ? 1 : 0, isCogs ? 1 : 0, isDepreciation ? 1 : 0, isSalesTax ? 1 : 0, isB2b ? 1 : 0]
         );
         const result = this.db.exec('SELECT last_insert_rowid() as id');
         this.autoSave();
@@ -586,10 +594,10 @@ const Database = {
      * @param {string|null} defaultType - Default type
      * @param {number|null} folderId - Folder ID
      */
-    updateCategory(id, name, isMonthly = false, defaultAmount = null, defaultType = null, folderId = null, showOnPl = false, isCogs = false, isDepreciation = false, isSalesTax = false) {
+    updateCategory(id, name, isMonthly = false, defaultAmount = null, defaultType = null, folderId = null, showOnPl = false, isCogs = false, isDepreciation = false, isSalesTax = false, isB2b = false) {
         this.db.run(
-            'UPDATE categories SET name = ?, is_monthly = ?, default_amount = ?, default_type = ?, folder_id = ?, show_on_pl = ?, is_cogs = ?, is_depreciation = ?, is_sales_tax = ? WHERE id = ?',
-            [name.trim(), isMonthly ? 1 : 0, defaultAmount, defaultType, folderId, showOnPl ? 1 : 0, isCogs ? 1 : 0, isDepreciation ? 1 : 0, isSalesTax ? 1 : 0, id]
+            'UPDATE categories SET name = ?, is_monthly = ?, default_amount = ?, default_type = ?, folder_id = ?, show_on_pl = ?, is_cogs = ?, is_depreciation = ?, is_sales_tax = ?, is_b2b = ? WHERE id = ?',
+            [name.trim(), isMonthly ? 1 : 0, defaultAmount, defaultType, folderId, showOnPl ? 1 : 0, isCogs ? 1 : 0, isDepreciation ? 1 : 0, isSalesTax ? 1 : 0, isB2b ? 1 : 0, id]
         );
         this.autoSave();
     },
@@ -781,6 +789,11 @@ const Database = {
      * @param {string} status - New status
      * @param {string} monthPaidValue - Optional month paid value (required for paid/received)
      */
+    setTransactionDateProcessed(id, date) {
+        this.db.run('UPDATE transactions SET date_processed = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [date, id]);
+        this.autoSave();
+    },
+
     updateTransactionStatus(id, status, monthPaidValue = null) {
         if (status === 'pending') {
             // Reverting to pending: clear date_processed and month_paid
@@ -1038,6 +1051,102 @@ const Database = {
     // ==================== PROFIT & LOSS ====================
 
     /**
+     * Get total actual revenue per month (accrual-based, from receivable non-COGS categories)
+     * @returns {Object} { 'YYYY-MM': totalRevenue, ... }
+     */
+    getActualRevenueByMonth() {
+        const result = this.db.exec(`
+            SELECT t.month_due as month,
+                   SUM(COALESCE(t.pretax_amount, t.amount)) as total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE t.month_due IS NOT NULL
+            AND t.transaction_type = 'receivable'
+            AND c.is_cogs = 0
+            AND c.show_on_pl != 1
+            GROUP BY t.month_due
+        `);
+        const map = {};
+        if (result.length > 0) {
+            result[0].values.forEach(row => { map[row[0]] = row[1]; });
+        }
+        return map;
+    },
+
+    /**
+     * Get P&L-consistent revenue by month, respecting pl_overrides.
+     * Returns total per month and optional B2B/consumer split (via is_b2b flag).
+     * Matches P&L revenue computation so progress tracker aligns with P&L tab.
+     * @returns {Object} { total: { 'YYYY-MM': number }, b2b: { 'YYYY-MM': number }, consumer: { 'YYYY-MM': number } }
+     */
+    getPLRevenueByMonth() {
+        const overrides = this.getAllPLOverrides();
+
+        // Revenue per category per month (same query as P&L spreadsheet)
+        const result = this.db.exec(`
+            SELECT c.id as category_id, c.is_b2b, t.month_due as month,
+                   SUM(COALESCE(t.pretax_amount, t.amount)) as total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE t.month_due IS NOT NULL
+            AND t.transaction_type = 'receivable'
+            AND c.is_cogs = 0 AND c.show_on_pl != 1
+            GROUP BY c.id, t.month_due
+        `);
+
+        const total = {}, b2b = {}, consumer = {};
+        if (result.length > 0) {
+            result[0].values.forEach(row => {
+                const catId = row[0];
+                const isB2b = row[1];
+                const month = row[2];
+                let amount = row[3];
+
+                // Apply P&L override if one exists for this category+month
+                const overrideKey = `${catId}-${month}`;
+                if (overrideKey in overrides) {
+                    amount = overrides[overrideKey];
+                }
+
+                total[month] = (total[month] || 0) + amount;
+                if (isB2b) {
+                    b2b[month] = (b2b[month] || 0) + amount;
+                } else {
+                    consumer[month] = (consumer[month] || 0) + amount;
+                }
+            });
+        }
+
+        // Also include override-only categories (categories with overrides but no transactions)
+        Object.keys(overrides).forEach(key => {
+            const [catIdStr, month] = key.split('-');
+            const catId = parseInt(catIdStr);
+            if (catId < 0) return; // skip tax override
+            // Check if this is a revenue category we haven't already counted
+            const alreadyCounted = result.length > 0 && result[0].values.some(
+                row => row[0] === catId && row[2] === month
+            );
+            if (!alreadyCounted) {
+                const catResult = this.db.exec(
+                    `SELECT is_b2b FROM categories WHERE id = ? AND is_cogs = 0 AND show_on_pl != 1`, [catId]
+                );
+                if (catResult.length > 0 && catResult[0].values.length > 0) {
+                    const isB2b = catResult[0].values[0][0];
+                    const amount = overrides[key];
+                    total[month] = (total[month] || 0) + amount;
+                    if (isB2b) {
+                        b2b[month] = (b2b[month] || 0) + amount;
+                    } else {
+                        consumer[month] = (consumer[month] || 0) + amount;
+                    }
+                }
+            }
+        });
+
+        return { total, b2b, consumer };
+    },
+
+    /**
      * Get P&L spreadsheet data (accrual-based: uses month_due, includes all statuses)
      * Revenue uses COALESCE(pretax_amount, amount) for receivable categories.
      * @returns {Object} { months, revenue, cogs, opex }
@@ -1217,6 +1326,15 @@ const Database = {
         const results = this.db.exec('SELECT * FROM balance_sheet_assets ORDER BY purchase_date ASC, name ASC');
         if (results.length === 0) return [];
         return this.rowsToObjects(results[0]);
+    },
+
+    /**
+     * Get total purchase cost of all fixed assets
+     * @returns {number} Sum of purchase_cost from balance_sheet_assets
+     */
+    getTotalAssetPurchaseCost() {
+        const result = this.db.exec('SELECT COALESCE(SUM(purchase_cost), 0) AS total FROM balance_sheet_assets');
+        return (result.length > 0 && result[0].values.length > 0) ? result[0].values[0][0] : 0;
     },
 
     /**
@@ -1572,6 +1690,67 @@ const Database = {
         `, [month, month]);
         if (results.length === 0) return [];
         return this.rowsToObjects(results[0]);
+    },
+
+    // ==================== BREAK-EVEN CONFIG ====================
+
+    /**
+     * Get default break-even configuration
+     * @returns {Object} Default config with consumer, b2b, timeline, and cost-source flags
+     */
+    _defaultBreakevenConfig() {
+        return {
+            timeline: { start: null, end: null },
+            includeBudgetExpenses: true,
+            includeAssetDepreciation: true,
+            includeLoanInterest: false,
+            includeAssetCosts: false,
+            consumer: { enabled: true, avgPrice: 0, avgCogs: 0 },
+            b2b: { enabled: false, monthlyUnits: 0, ratePerUnit: 0, cogsPerUnit: 0 },
+            unitIncrement: 100
+        };
+    },
+
+    /**
+     * Get break-even configuration, merged with defaults
+     * @returns {Object} Break-even config
+     */
+    getBreakevenConfig() {
+        const result = this.db.exec("SELECT value FROM app_meta WHERE key = 'breakeven_config'");
+        if (result.length === 0 || result[0].values.length === 0) {
+            return this._defaultBreakevenConfig();
+        }
+        try {
+            return Object.assign(this._defaultBreakevenConfig(), JSON.parse(result[0].values[0][0]));
+        } catch (e) {
+            return this._defaultBreakevenConfig();
+        }
+    },
+
+    /**
+     * Save break-even configuration
+     * @param {Object} config - Break-even config to persist
+     */
+    setBreakevenConfig(config) {
+        this.db.run(
+            "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('breakeven_config', ?)",
+            [JSON.stringify(config)]
+        );
+        this.autoSave();
+    },
+
+    /**
+     * Get total monthly fixed costs from budget expenses active in a given month
+     * @param {string} month - YYYY-MM
+     * @returns {number}
+     */
+    getBudgetFixedCostsForMonth(month) {
+        const result = this.db.exec(`
+            SELECT COALESCE(SUM(monthly_amount), 0) as total
+            FROM budget_expenses
+            WHERE start_month <= ? AND (end_month IS NULL OR end_month >= ?)
+        `, [month, month]);
+        return result[0].values[0][0] || 0;
     },
 
     // ==================== EQUITY & LOAN CONFIG ====================
