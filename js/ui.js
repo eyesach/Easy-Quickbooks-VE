@@ -817,6 +817,96 @@ const UI = {
 
         html += '</tbody></table>';
         container.innerHTML = html;
+
+        // ==================== CASHFLOW SUMMARY ====================
+        const summaryEl = document.getElementById('cashflowSummary');
+        if (summaryEl && months.length > 0) {
+            // Find actuals boundary
+            const actualMonths = months.filter(m => !isFuture(m));
+            const projectedMonths = months.filter(m => isFuture(m));
+            const lastActualMonth = actualMonths.length > 0 ? actualMonths[actualMonths.length - 1] : null;
+
+            // Starting cash (first month's beginning balance)
+            const startingCash = beginningBalance[months[0]] || 0;
+
+            // Actuals ending cash (ending balance of last actual month)
+            const actualsEndingCash = lastActualMonth
+                ? (beginningBalance[lastActualMonth] + monthReceipts[lastActualMonth] - monthPayments[lastActualMonth])
+                : startingCash;
+
+            // Projected ending cash (ending balance of last month)
+            const lastMonth = months[months.length - 1];
+            const projectedEndingCash = beginningBalance[lastMonth] + monthReceipts[lastMonth] - monthPayments[lastMonth];
+
+            // Actuals total change
+            const actualsChange = actualsEndingCash - startingCash;
+
+            // Projected total change (from actuals end to final end)
+            const projectedChange = projectedEndingCash - actualsEndingCash;
+
+            // Format month short name (e.g., "OCT")
+            const fmtMonthName = (m) => {
+                const [y, mo] = m.split('-');
+                return new Date(y, parseInt(mo) - 1, 1).toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+            };
+
+            // Build monthly cards
+            let summaryHtml = '<div class="cashflow-summary-months">';
+            months.forEach(m => {
+                const net = monthReceipts[m] - monthPayments[m];
+                const ending = beginningBalance[m] + monthReceipts[m] - monthPayments[m];
+                const future = isFuture(m);
+                const netClass = net >= 0 ? 'cf-net-positive' : 'cf-net-negative';
+                const prefix = net >= 0 ? '+' : '';
+
+                summaryHtml += `<div class="cashflow-summary-card${future ? ' cf-card-projected' : ''}">
+                    <div class="cashflow-summary-month-label">${fmtMonthName(m)}</div>
+                    <div class="cashflow-summary-type">${future ? 'Projected' : 'Actual'}</div>
+                    <div class="cashflow-summary-net ${netClass}">${prefix}${fmtAmt(net)}</div>
+                    <div class="cashflow-summary-net-label">NET CASH FLOW</div>
+                    <div class="cashflow-summary-balance">${fmtAmt(ending)}</div>
+                    <div class="cashflow-summary-balance-label">ENDING BALANCE</div>
+                </div>`;
+            });
+            summaryHtml += '</div>';
+
+            // Timeline bar
+            const actualsChangeSign = actualsChange >= 0 ? '+' : '';
+            const projectedChangeSign = projectedChange >= 0 ? '+' : '';
+            summaryHtml += `<div class="cashflow-summary-timeline">
+                <div class="cf-timeline-point">
+                    <div class="cf-timeline-label">STARTING CASH</div>
+                    <div class="cf-timeline-value">${fmtAmt(startingCash)}</div>
+                </div>
+                <div class="cf-timeline-arrow">
+                    <div class="cf-timeline-change">Actuals: ${actualsChangeSign}${fmtAmt(actualsChange)}</div>
+                    <div class="cf-timeline-line cf-timeline-actual"></div>
+                </div>`;
+
+            if (lastActualMonth) {
+                summaryHtml += `<div class="cf-timeline-point cf-timeline-mid">
+                    <div class="cf-timeline-value">${fmtAmt(actualsEndingCash)}</div>
+                    <div class="cf-timeline-label">Actuals Ending Cash</div>
+                </div>`;
+            }
+
+            if (projectedMonths.length > 0) {
+                summaryHtml += `<div class="cf-timeline-arrow">
+                    <div class="cf-timeline-change">Projected: ${projectedChangeSign}${fmtAmt(projectedChange)}</div>
+                    <div class="cf-timeline-line cf-timeline-projected"></div>
+                </div>`;
+            }
+
+            summaryHtml += `<div class="cf-timeline-point">
+                <div class="cf-timeline-label">PROJECTED ENDING CASH</div>
+                <div class="cf-timeline-value">${fmtAmt(projectedEndingCash)}</div>
+            </div>
+            </div>`;
+
+            summaryEl.innerHTML = summaryHtml;
+        } else if (summaryEl) {
+            summaryEl.innerHTML = '';
+        }
     },
 
     /**

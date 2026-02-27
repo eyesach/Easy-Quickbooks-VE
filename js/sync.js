@@ -33,6 +33,12 @@ const SyncService = {
     /** @type {string} Display name of the current user */
     currentUser: '',
 
+    /** @type {string|null} Authenticated member ID */
+    memberId: null,
+
+    /** @type {string} Role of the current user ('admin' or 'member') */
+    memberRole: 'member',
+
     /** @type {boolean} Whether sync is actively connected to a group */
     isConnected: false,
 
@@ -60,13 +66,16 @@ const SyncService = {
      * Create a new shared group and become its first member.
      * @param {string} groupName - Human-readable group name
      * @param {string} userName - Display name of the creator
+     * @param {Object} memberInfo - { id, role } from registerMember
      * @returns {Promise<Object>} { groupId, name, createdAt }
      */
-    async createGroup(groupName, userName) {
+    async createGroup(groupName, userName, memberInfo) {
         this._requireApi();
         const result = await this.api.createGroup(groupName);
         this.groupId = result.groupId;
         this.currentUser = userName;
+        this.memberId = memberInfo.id;
+        this.memberRole = memberInfo.role;
         this.localVersion = 0;
         this.isConnected = true;
         this._emitStatus('connected', `Created group "${groupName}"`);
@@ -77,13 +86,16 @@ const SyncService = {
      * Join an existing group by ID.
      * @param {string} groupId - Group to join
      * @param {string} userName - Display name
-     * @returns {Promise<Object>} { groupId, name, members, currentVersion }
+     * @param {Object} memberInfo - { id, role } from authentication
+     * @returns {Promise<Object>} { groupId, name, currentVersion }
      */
-    async joinGroup(groupId, userName) {
+    async joinGroup(groupId, userName, memberInfo) {
         this._requireApi();
         const result = await this.api.joinGroup(groupId, userName);
         this.groupId = groupId;
         this.currentUser = userName;
+        this.memberId = memberInfo.id;
+        this.memberRole = memberInfo.role;
         this.localVersion = result.currentVersion || 0;
         this.isConnected = true;
         this._emitStatus('connected', `Joined group "${result.name}"`);
@@ -97,6 +109,9 @@ const SyncService = {
         this.stopPolling();
         this.groupId = null;
         this.localVersion = 0;
+        this.currentUser = '';
+        this.memberId = null;
+        this.memberRole = 'member';
         this.isConnected = false;
         this._emitStatus('disconnected', 'Left group');
     },
@@ -292,6 +307,8 @@ const SyncService = {
         this.groupId = null;
         this.localVersion = 0;
         this.currentUser = '';
+        this.memberId = null;
+        this.memberRole = 'member';
         this.isConnected = false;
         this.api = null;
         this.onRemoteUpdate = null;

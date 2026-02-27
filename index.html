@@ -368,6 +368,7 @@
                 <div id="cashflowSpreadsheet" class="cashflow-spreadsheet-wrapper">
                     <p class="empty-state">No completed transactions yet.</p>
                 </div>
+                <div id="cashflowSummary" class="cashflow-summary"></div>
             </section>
         </div>
 
@@ -1360,6 +1361,10 @@
                                 <input type="text" id="syncCreateName" class="form-control" required placeholder="e.g., Alice">
                             </div>
                             <div class="form-group">
+                                <label for="syncCreatePassword">Password</label>
+                                <input type="password" id="syncCreatePassword" class="form-control" required placeholder="Choose a password" minlength="4">
+                            </div>
+                            <div class="form-group">
                                 <label for="newGroupName">Group Name</label>
                                 <input type="text" id="newGroupName" class="form-control" required placeholder="e.g., Q1 2026 Journal">
                             </div>
@@ -1375,10 +1380,18 @@
                         </form>
                     </div>
                     <div id="syncJoinTab" class="sync-tab-content">
+                        <div class="sync-subtabs">
+                            <button type="button" class="sync-subtab active" data-join-mode="rejoin">I have an account</button>
+                            <button type="button" class="sync-subtab" data-join-mode="new">New member</button>
+                        </div>
                         <form id="joinGroupForm">
                             <div class="form-group">
-                                <label for="syncJoinName">Your Display Name</label>
-                                <input type="text" id="syncJoinName" class="form-control" required placeholder="e.g., Bob">
+                                <label for="syncJoinName" id="syncJoinNameLabel">Username</label>
+                                <input type="text" id="syncJoinName" class="form-control" required placeholder="Enter your username">
+                            </div>
+                            <div class="form-group">
+                                <label for="syncJoinPassword" id="syncJoinPasswordLabel">Password</label>
+                                <input type="password" id="syncJoinPassword" class="form-control" required placeholder="Enter your password" minlength="4">
                             </div>
                             <div class="form-group">
                                 <label for="joinGroupCode">Invite Code</label>
@@ -1404,6 +1417,10 @@
                             <span id="syncCurrentUser" class="sync-info-value">--</span>
                         </div>
                         <div class="sync-info-row">
+                            <span class="sync-info-label">Role</span>
+                            <span id="syncCurrentRole" class="sync-info-value">--</span>
+                        </div>
+                        <div class="sync-info-row">
                             <span class="sync-info-label">Version</span>
                             <span id="syncVersion" class="sync-info-value">--</span>
                         </div>
@@ -1415,6 +1432,7 @@
                     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 16px;">
                         <button type="button" id="syncPullBtn" class="btn btn-secondary" style="width:100%;">Pull Latest</button>
                         <button type="button" id="syncHistoryBtn" class="btn btn-secondary" style="width:100%;">Version History</button>
+                        <button type="button" id="syncMembersBtn" class="btn btn-secondary" style="width:100%; display:none;">Members</button>
                         <button type="button" id="syncDisconnectBtn" class="btn btn-danger" style="width:100%;">Disconnect</button>
                     </div>
                 </div>
@@ -1460,6 +1478,31 @@
                 <div class="form-actions">
                     <button type="button" id="cancelRollbackBtn" class="btn btn-secondary">Cancel</button>
                     <button type="button" id="confirmRollbackBtn" class="btn btn-danger">Rollback</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Members Modal (admin) -->
+        <div id="membersModal" class="modal">
+            <div class="modal-content modal-wide">
+                <h3>Group Members</h3>
+                <div id="membersList" class="members-list">
+                    <p class="empty-state">Loading...</p>
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="closeMembersBtn" class="btn btn-secondary">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Remove Member Confirmation Modal -->
+        <div id="removeMemberModal" class="modal">
+            <div class="modal-content">
+                <h3>Remove Member</h3>
+                <p id="removeMemberMessage" style="margin-bottom: 16px;">Remove this member from the group?</p>
+                <div class="form-actions">
+                    <button type="button" id="cancelRemoveMemberBtn" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="confirmRemoveMemberBtn" class="btn btn-danger">Remove</button>
                 </div>
             </div>
         </div>

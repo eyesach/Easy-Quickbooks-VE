@@ -1558,6 +1558,31 @@ const App = {
             this.handleJoinGroup();
         });
 
+        // Join mode toggle (rejoin / new member)
+        this._joinMode = 'rejoin';
+        document.querySelectorAll('.sync-subtab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.sync-subtab').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this._joinMode = btn.dataset.joinMode;
+                const nameLabel = document.getElementById('syncJoinNameLabel');
+                const passLabel = document.getElementById('syncJoinPasswordLabel');
+                const nameInput = document.getElementById('syncJoinName');
+                const passInput = document.getElementById('syncJoinPassword');
+                if (this._joinMode === 'new') {
+                    nameLabel.textContent = 'Choose a Username';
+                    passLabel.textContent = 'Choose a Password';
+                    nameInput.placeholder = 'Pick a display name...';
+                    passInput.placeholder = 'Choose a password (min 4 chars)';
+                } else {
+                    nameLabel.textContent = 'Username';
+                    passLabel.textContent = 'Password';
+                    nameInput.placeholder = 'Enter your username';
+                    passInput.placeholder = 'Enter your password';
+                }
+            });
+        });
+
         document.getElementById('syncPullBtn').addEventListener('click', () => {
             this.handleSyncPull();
         });
@@ -1588,6 +1613,20 @@ const App = {
         });
         document.getElementById('confirmRollbackBtn').addEventListener('click', () => {
             this.handleConfirmRollback();
+        });
+
+        // Members management (admin)
+        document.getElementById('syncMembersBtn').addEventListener('click', () => {
+            this.openMembersModal();
+        });
+        document.getElementById('closeMembersBtn').addEventListener('click', () => {
+            UI.hideModal('membersModal');
+        });
+        document.getElementById('cancelRemoveMemberBtn').addEventListener('click', () => {
+            UI.hideModal('removeMemberModal');
+        });
+        document.getElementById('confirmRemoveMemberBtn').addEventListener('click', () => {
+            this.handleConfirmRemoveMember();
         });
     },
 
@@ -4082,9 +4121,21 @@ const App = {
         SyncService.onConflict = (err) => this.handleSyncConflict(err);
 
         const syncConfig = Database.getSyncConfig();
-        if (syncConfig && syncConfig.groupId && syncConfig.userName) {
+        if (syncConfig && syncConfig.groupId && syncConfig.userName && syncConfig.memberId) {
             try {
-                await SyncService.joinGroup(syncConfig.groupId, syncConfig.userName);
+                // Verify member still exists (not removed by admin)
+                const memberInfo = await SupabaseAdapter.verifyMember(
+                    syncConfig.groupId, syncConfig.memberId
+                );
+
+                if (!memberInfo) {
+                    Database.clearSyncConfig();
+                    this.updateSyncUI();
+                    UI.showNotification('You were removed from the group by an admin.', 'error');
+                    return;
+                }
+
+                await SyncService.joinGroup(syncConfig.groupId, syncConfig.userName, memberInfo);
                 if (!this._syncAutoSaveWrapped) {
                     SyncService.wrapAutoSave(Database);
                     this._syncAutoSaveWrapped = true;
@@ -4140,20 +4191,39 @@ const App = {
 
     async handleCreateGroup() {
         const userName = document.getElementById('syncCreateName').value.trim();
+        const password = document.getElementById('syncCreatePassword').value;
         const groupName = document.getElementById('newGroupName').value.trim();
         const url = document.getElementById('supabaseUrl').value.trim();
         const anonKey = document.getElementById('supabaseAnonKey').value.trim();
-        if (!userName || !groupName || !url || !anonKey) return;
+        if (!userName || !password || !groupName || !url || !anonKey) {
+            UI.showNotification('All fields are required', 'error');
+            return;
+        }
 
         try {
             this._initSupabase(url, anonKey);
 
-            const result = await SyncService.createGroup(groupName, userName);
+            // Create group first, then register creator as admin
+            const groupResult = await SupabaseAdapter.createGroup(groupName);
+            const memberInfo = await SupabaseAdapter.registerMember(
+                groupResult.groupId, userName, password, 'admin'
+            );
+
+            // Set up SyncService state
+            SyncService.groupId = groupResult.groupId;
+            SyncService.currentUser = userName;
+            SyncService.memberId = memberInfo.id;
+            SyncService.memberRole = memberInfo.role;
+            SyncService.localVersion = 0;
+            SyncService.isConnected = true;
 
             const blob = new Uint8Array(Database.db.export());
             await SyncService.push(blob);
 
-            Database.setSyncConfig({ groupId: result.groupId, groupName, userName });
+            Database.setSyncConfig({
+                groupId: groupResult.groupId, groupName, userName,
+                memberId: memberInfo.id, memberRole: memberInfo.role
+            });
 
             if (!this._syncAutoSaveWrapped) {
                 SyncService.wrapAutoSave(Database);
@@ -4161,7 +4231,7 @@ const App = {
             }
             SyncService.startPolling();
 
-            const inviteCode = this.encodeInviteCode(result.groupId, url, anonKey);
+            const inviteCode = this.encodeInviteCode(groupResult.groupId, url, anonKey);
             this._currentInviteCode = inviteCode;
 
             UI.hideModal('syncMenuModal');
@@ -4176,8 +4246,12 @@ const App = {
 
     async handleJoinGroup() {
         const userName = document.getElementById('syncJoinName').value.trim();
+        const password = document.getElementById('syncJoinPassword').value;
         const code = document.getElementById('joinGroupCode').value.trim();
-        if (!userName || !code) return;
+        if (!userName || !password || !code) {
+            UI.showNotification('All fields are required', 'error');
+            return;
+        }
 
         const decoded = this.decodeInviteCode(code);
         if (!decoded) {
@@ -4188,7 +4262,41 @@ const App = {
         try {
             this._initSupabase(decoded.url, decoded.anonKey);
 
-            const result = await SyncService.joinGroup(decoded.groupId, userName);
+            let memberInfo;
+
+            if (this._joinMode === 'rejoin') {
+                // Rejoin: authenticate only — don't auto-register
+                try {
+                    memberInfo = await SupabaseAdapter.authenticateMember(
+                        decoded.groupId, userName, password
+                    );
+                } catch (authErr) {
+                    if (authErr.code === 'INVALID_PASSWORD') {
+                        UI.showNotification('Incorrect password for this username.', 'error');
+                        return;
+                    }
+                    throw authErr;
+                }
+                if (!memberInfo) {
+                    UI.showNotification('No account found with this username. Switch to "New member" to register.', 'error');
+                    return;
+                }
+            } else {
+                // New member: register only — don't auto-authenticate
+                try {
+                    memberInfo = await SupabaseAdapter.registerMember(
+                        decoded.groupId, userName, password, 'member'
+                    );
+                } catch (regErr) {
+                    if (regErr.code === 'MEMBER_EXISTS') {
+                        UI.showNotification('Username already taken. Switch to "I have an account" to sign in.', 'error');
+                        return;
+                    }
+                    throw regErr;
+                }
+            }
+
+            const result = await SyncService.joinGroup(decoded.groupId, userName, memberInfo);
 
             const loaded = await SyncService.loadRemoteIntoDatabase(Database);
             if (loaded) {
@@ -4200,7 +4308,10 @@ const App = {
                 UI.showNotification('Joined "' + result.name + '"', 'success');
             }
 
-            Database.setSyncConfig({ groupId: decoded.groupId, groupName: result.name, userName });
+            Database.setSyncConfig({
+                groupId: decoded.groupId, groupName: result.name, userName,
+                memberId: memberInfo.id, memberRole: memberInfo.role
+            });
             this._currentInviteCode = code;
 
             if (!this._syncAutoSaveWrapped) {
@@ -4305,6 +4416,18 @@ const App = {
             document.getElementById('syncCurrentUser').textContent = SyncService.currentUser || '--';
             document.getElementById('syncVersion').textContent = 'v' + SyncService.localVersion;
 
+            // Show role
+            const roleEl = document.getElementById('syncCurrentRole');
+            if (roleEl) {
+                roleEl.textContent = SyncService.memberRole === 'admin' ? 'Admin' : 'Member';
+            }
+
+            // Show/hide Members button based on role
+            const membersBtn = document.getElementById('syncMembersBtn');
+            if (membersBtn) {
+                membersBtn.style.display = SyncService.memberRole === 'admin' ? '' : 'none';
+            }
+
             // Rebuild invite code for connected panel
             if (!this._currentInviteCode && SyncService.groupId && supaConfig) {
                 this._currentInviteCode = this.encodeInviteCode(SyncService.groupId, supaConfig.url, supaConfig.anonKey);
@@ -4383,6 +4506,72 @@ const App = {
             UI.showNotification('Rollback failed: ' + err.message, 'error');
         }
         this._rollbackTargetVersion = null;
+    },
+
+    async openMembersModal() {
+        UI.showModal('membersModal');
+        document.getElementById('membersList').innerHTML = '<p class="empty-state">Loading...</p>';
+
+        try {
+            const members = await SupabaseAdapter.listMembers(SyncService.groupId);
+            const container = document.getElementById('membersList');
+
+            if (!members || members.length === 0) {
+                container.innerHTML = '<p class="empty-state">No members found.</p>';
+                return;
+            }
+
+            container.innerHTML = members.map(m => {
+                const isCurrentUser = m.id === SyncService.memberId;
+                const joinDate = new Date(m.joined_at).toLocaleDateString();
+                const roleLabel = m.role === 'admin' ? ' (Admin)' : '';
+                const removeBtnHtml = (!isCurrentUser && SyncService.memberRole === 'admin')
+                    ? '<button type="button" class="btn btn-small btn-danger remove-member-btn" data-member-id="' + m.id + '" data-member-name="' + m.display_name + '">Remove</button>'
+                    : '';
+
+                return '<div class="member-item">' +
+                    '<div class="member-item-info">' +
+                    '<div class="member-item-name">' + m.display_name + roleLabel + (isCurrentUser ? ' (you)' : '') + '</div>' +
+                    '<div class="member-item-meta">Joined ' + joinDate + '</div>' +
+                    '</div>' +
+                    removeBtnHtml +
+                    '</div>';
+            }).join('');
+
+            container.querySelectorAll('.remove-member-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    this._removeMemberTarget = {
+                        id: btn.dataset.memberId,
+                        name: btn.dataset.memberName
+                    };
+                    document.getElementById('removeMemberMessage').textContent =
+                        'Remove "' + btn.dataset.memberName + '" from this group? They will need to re-register to rejoin.';
+                    UI.showModal('removeMemberModal');
+                });
+            });
+        } catch (err) {
+            console.error('Failed to load members:', err);
+            document.getElementById('membersList').innerHTML = '<p class="empty-state">Failed to load members.</p>';
+        }
+    },
+
+    async handleConfirmRemoveMember() {
+        if (!this._removeMemberTarget) return;
+
+        try {
+            await SupabaseAdapter.removeMember(
+                SyncService.groupId,
+                this._removeMemberTarget.id,
+                SyncService.memberId
+            );
+            UI.hideModal('removeMemberModal');
+            UI.showNotification('Removed "' + this._removeMemberTarget.name + '" from the group', 'success');
+            this._removeMemberTarget = null;
+            this.openMembersModal();
+        } catch (err) {
+            console.error('Failed to remove member:', err);
+            UI.showNotification('Failed to remove member: ' + err.message, 'error');
+        }
     },
 
     copyToClipboard(text) {

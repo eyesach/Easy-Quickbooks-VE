@@ -1274,6 +1274,179 @@ body {
     color: var(--color-payable);
 }
 
+/* Cashflow Summary */
+.cashflow-summary {
+    margin-top: 24px;
+    border-top: 2px solid var(--color-border);
+    padding-top: 24px;
+}
+
+.cashflow-summary:empty {
+    display: none;
+}
+
+.cashflow-summary-months {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+}
+
+.cashflow-summary-card {
+    flex: 0 0 auto;
+    min-width: 130px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 14px 16px;
+    background: var(--color-bg);
+    border-radius: var(--radius-sm);
+    text-align: center;
+}
+
+.cashflow-summary-card.cf-card-projected {
+    background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.06);
+    border: 1px dashed rgba(var(--color-primary-rgb, 99, 102, 241), 0.2);
+}
+
+.cashflow-summary-month-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--color-text);
+}
+
+.cashflow-summary-type {
+    font-size: 0.6rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-text-muted);
+}
+
+.cashflow-summary-net {
+    font-size: 1rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    font-family: 'DM Mono', monospace;
+    margin-top: 4px;
+}
+
+.cf-net-positive {
+    color: var(--color-receivable);
+}
+
+.cf-net-negative {
+    color: var(--color-payable);
+}
+
+.cashflow-summary-net-label,
+.cashflow-summary-balance-label {
+    font-size: 0.55rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--color-text-muted);
+}
+
+.cashflow-summary-balance {
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    font-family: 'DM Mono', monospace;
+    color: var(--color-text);
+    margin-top: 4px;
+}
+
+/* Cashflow Summary Timeline */
+.cashflow-summary-timeline {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-top: 20px;
+    padding: 16px 20px;
+    background: var(--color-bg);
+    border-radius: var(--radius-sm);
+}
+
+.cf-timeline-point {
+    flex-shrink: 0;
+    text-align: center;
+}
+
+.cf-timeline-mid {
+    flex-shrink: 0;
+}
+
+.cf-timeline-label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--color-text-muted);
+}
+
+.cf-timeline-value {
+    font-size: 1.15rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    font-family: 'DM Mono', monospace;
+    color: var(--color-text);
+}
+
+.cf-timeline-arrow {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 0 12px;
+    min-width: 100px;
+}
+
+.cf-timeline-change {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+}
+
+.cf-timeline-line {
+    width: 100%;
+    height: 2px;
+    position: relative;
+}
+
+.cf-timeline-line::after {
+    content: '';
+    position: absolute;
+    right: -4px;
+    top: -3px;
+    width: 0;
+    height: 0;
+    border-left: 6px solid;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+}
+
+.cf-timeline-actual {
+    background: var(--color-text);
+}
+
+.cf-timeline-actual::after {
+    border-left-color: var(--color-text);
+}
+
+.cf-timeline-projected {
+    background: var(--color-text-muted);
+    border-style: dashed;
+}
+
+.cf-timeline-projected::after {
+    border-left-color: var(--color-text-muted);
+}
+
 /* P&L Table Styles */
 .pnl-section {
     background: var(--color-white);
@@ -1809,6 +1982,71 @@ body {
 
 .sync-tab-content.active {
     display: block;
+}
+
+.sync-subtabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 12px;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+}
+
+.sync-subtab {
+    flex: 1;
+    padding: 6px 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: none;
+    background: var(--color-bg);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.sync-subtab:not(:last-child) {
+    border-right: 1px solid var(--color-border);
+}
+
+.sync-subtab.active {
+    background: var(--color-primary);
+    color: #fff;
+}
+
+.sync-subtab:not(.active):hover {
+    background: var(--color-surface);
+}
+
+.members-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.member-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.member-item:last-child {
+    border-bottom: none;
+}
+
+.member-item-info {
+    flex: 1;
+}
+
+.member-item-name {
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.member-item-meta {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
 }
 
 /* Responsive */

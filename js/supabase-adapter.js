@@ -5,12 +5,17 @@
  *   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
  *
  * API contract (matches SyncService.api):
- *   createGroup(name)           → { groupId, name, createdAt }
- *   joinGroup(groupId, user)    → { groupId, name, members, currentVersion }
- *   pushVersion(groupId, data)  → { version } or throws ConflictError
- *   pullLatest(groupId)         → { version, data, savedBy, savedAt } | null
- *   getHistory(groupId, limit)  → [{ version, savedBy, savedAt, sizeBytes }]
- *   pullVersion(groupId, ver)   → { version, data, savedBy, savedAt }
+ *   createGroup(name)                          → { groupId, name, createdAt }
+ *   joinGroup(groupId, user)                   → { groupId, name, currentVersion }
+ *   pushVersion(groupId, data)                 → { version } or throws ConflictError
+ *   pullLatest(groupId)                        → { version, data, savedBy, savedAt } | null
+ *   getHistory(groupId, limit)                 → [{ version, savedBy, savedAt, sizeBytes }]
+ *   pullVersion(groupId, ver)                  → { version, data, savedBy, savedAt }
+ *   registerMember(groupId, name, pw, role)    → { id, group_id, display_name, role }
+ *   authenticateMember(groupId, name, pw)      → JSONB | null
+ *   verifyMember(groupId, memberId)            → JSONB | null
+ *   removeMember(groupId, memberId, adminId)   → true
+ *   listMembers(groupId)                       → [{ id, display_name, role, joined_at }]
  */
 
 const SupabaseAdapter = {
@@ -46,16 +51,7 @@ const SupabaseAdapter = {
             .single();
         if (groupErr || !group) throw new Error('Group not found');
 
-        // Add member
-        await this._client
-            .from('group_members')
-            .insert({ group_id: groupId, display_name: user });
-
-        // Get all members
-        const { data: members } = await this._client
-            .from('group_members')
-            .select('display_name')
-            .eq('group_id', groupId);
+        // Member creation is handled by registerMember/authenticateMember RPCs
 
         // Get current version
         const { data: verData } = await this._client
@@ -70,7 +66,6 @@ const SupabaseAdapter = {
         return {
             groupId,
             name: group.name,
-            members: (members || []).map(m => m.display_name),
             currentVersion
         };
     },
@@ -143,6 +138,78 @@ const SupabaseAdapter = {
             savedBy: verData.saved_by,
             savedAt: verData.saved_at
         };
+    },
+
+    // ==================== MEMBER AUTH ====================
+
+    async registerMember(groupId, displayName, password, role = 'member') {
+        const { data, error } = await this._client.rpc('register_member', {
+            p_group_id: groupId,
+            p_display_name: displayName,
+            p_password: password,
+            p_role: role
+        });
+        if (error) {
+            if (error.message && error.message.includes('MEMBER_EXISTS')) {
+                const err = new Error('A member with this name already exists');
+                err.code = 'MEMBER_EXISTS';
+                throw err;
+            }
+            throw new Error('Registration failed: ' + error.message);
+        }
+        return data;
+    },
+
+    async authenticateMember(groupId, displayName, password) {
+        const { data, error } = await this._client.rpc('authenticate_member', {
+            p_group_id: groupId,
+            p_display_name: displayName,
+            p_password: password
+        });
+        if (error) {
+            if (error.message && error.message.includes('INVALID_PASSWORD')) {
+                const err = new Error('Incorrect password');
+                err.code = 'INVALID_PASSWORD';
+                throw err;
+            }
+            throw new Error('Authentication failed: ' + error.message);
+        }
+        return data;
+    },
+
+    async verifyMember(groupId, memberId) {
+        const { data, error } = await this._client.rpc('verify_member', {
+            p_group_id: groupId,
+            p_member_id: memberId
+        });
+        if (error) throw new Error('Verify failed: ' + error.message);
+        return data;
+    },
+
+    async removeMember(groupId, memberId, adminId) {
+        const { data, error } = await this._client.rpc('remove_member', {
+            p_group_id: groupId,
+            p_member_id: memberId,
+            p_admin_id: adminId
+        });
+        if (error) {
+            if (error.message && error.message.includes('NOT_ADMIN')) {
+                throw new Error('Only admins can remove members');
+            }
+            if (error.message && error.message.includes('CANNOT_REMOVE_SELF')) {
+                throw new Error('Cannot remove yourself');
+            }
+            throw new Error('Remove failed: ' + error.message);
+        }
+        return data;
+    },
+
+    async listMembers(groupId) {
+        const { data, error } = await this._client.rpc('list_members', {
+            p_group_id: groupId
+        });
+        if (error) throw new Error('List members failed: ' + error.message);
+        return data || [];
     },
 
     // ==================== INTERNALS ====================
