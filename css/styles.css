@@ -3597,6 +3597,222 @@ body {
     }
 }
 
+/* ==================== SHARE & VIEW-ONLY MODE ==================== */
+
+.view-only-banner {
+    background: linear-gradient(135deg, #e8f4fd 0%, #d1ecf1 100%);
+    color: #0c5460;
+    padding: 10px 20px;
+    text-align: center;
+    font-size: 0.875rem;
+    border-bottom: 2px solid rgba(12, 84, 96, 0.15);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.view-only-banner-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+body.view-only-mode .header-actions .btn-primary,
+body.view-only-mode .header-actions .btn-secondary,
+body.view-only-mode .sync-wrapper,
+body.view-only-mode .gear-wrapper,
+body.view-only-mode .share-btn,
+body.view-only-mode .transaction-actions,
+body.view-only-mode .inline-status-select,
+body.view-only-mode .pnl-editable,
+body.view-only-mode .cf-editable {
+    display: none !important;
+}
+
+body.view-only-mode .journal-owner-input {
+    pointer-events: none;
+    opacity: 0.7;
+}
+
+body.view-only-mode .pnl-editable-cell,
+body.view-only-mode .cf-editable-cell {
+    cursor: default;
+}
+
+.share-status {
+    margin-bottom: 12px;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+}
+
+.share-url-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.share-url-input {
+    flex: 1;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+}
+
+.share-qr-container {
+    display: flex;
+    justify-content: center;
+    padding: 20px 0 8px;
+}
+
+.share-qr-container svg {
+    border: 8px solid white;
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-sm);
+}
+
+.share-expiry {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    text-align: center;
+    margin-top: 4px;
+}
+
+/* ==================== PROJECTED SALES TAB ==================== */
+
+.ps-section {
+    background: var(--color-white);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+}
+
+.ps-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: var(--color-accent-bg);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.ps-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.ps-controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.ps-config-panel {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.ps-fieldset {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.ps-fieldset legend {
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0 8px;
+}
+
+.ps-cm-preview {
+    display: inline-block;
+    padding: 8px 12px;
+    background: var(--color-bg);
+    border-radius: var(--radius-sm);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    margin-top: 4px;
+}
+
+.ps-summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.ps-summary-cards:empty {
+    display: none;
+}
+
+.ps-spreadsheet-wrapper {
+    padding: 0 20px 20px;
+    overflow-x: auto;
+}
+
+.ps-table .ps-unit-editable {
+    cursor: pointer;
+    background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.04);
+}
+
+.ps-table .ps-unit-editable:hover {
+    background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.10);
+}
+
+.ps-overwrite-header {
+    background: rgba(255, 152, 0, 0.08) !important;
+    border-bottom: 2px solid rgba(255, 152, 0, 0.4) !important;
+}
+
+.ps-replaced {
+    color: var(--color-text-muted) !important;
+    font-style: italic;
+    text-align: center !important;
+}
+
+.ps-projected-row td {
+    background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.04);
+    font-style: italic;
+}
+
+.ps-view-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ps-toggle-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.ps-toggle-select {
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-white);
+    color: var(--color-text);
+}
+
+@media (max-width: 900px) {
+    .ps-summary-cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .ps-summary-cards {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* ==================== THEME STYLE OVERRIDES ==================== */
 
 /* Modern - Sharp geometric, high contrast, spacious */

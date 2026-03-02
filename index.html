@@ -39,6 +39,15 @@
                         <span id="syncStatusDot" class="sync-status-dot" style="display:none;"></span>
                     </button>
                 </div>
+                <button id="shareBtn" class="btn-icon always-visible share-btn" title="Share View-Only Link" style="display:none;">
+                    <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <circle cx="18" cy="5" r="3"></circle>
+                        <circle cx="6" cy="12" r="3"></circle>
+                        <circle cx="18" cy="19" r="3"></circle>
+                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                    </svg>
+                </button>
                 <div class="gear-wrapper">
                     <button id="gearBtn" class="btn-icon always-visible gear-btn" title="Settings">
                         <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -168,6 +177,7 @@
             <button class="main-tab" data-tab="loan">Loans</button>
             <button class="main-tab" data-tab="budget">Budget</button>
             <button class="main-tab" data-tab="breakeven">Break-Even</button>
+            <button class="main-tab" data-tab="projectedsales">Projected Sales</button>
         </nav>
 
         <!-- Journal Tab -->
@@ -364,6 +374,13 @@
             <section class="cashflow-section">
                 <div class="cashflow-header">
                     <h3>Cash Flow Summary</h3>
+                    <div class="ps-view-toggle" id="cfViewToggle" style="display: none;">
+                        <label class="ps-toggle-label">View:</label>
+                        <select id="cfViewMode" class="ps-toggle-select">
+                            <option value="projected">Projected</option>
+                            <option value="actual">Actual</option>
+                        </select>
+                    </div>
                 </div>
                 <div id="cashflowSpreadsheet" class="cashflow-spreadsheet-wrapper">
                     <p class="empty-state">No completed transactions yet.</p>
@@ -378,6 +395,13 @@
                 <div class="pnl-header">
                     <h3>Profit &amp; Loss Statement</h3>
                     <div class="pnl-controls">
+                        <div class="ps-view-toggle" id="pnlViewToggle" style="display: none;">
+                            <label class="ps-toggle-label">View:</label>
+                            <select id="pnlViewMode" class="ps-toggle-select">
+                                <option value="projected">Projected</option>
+                                <option value="actual">Actual</option>
+                            </select>
+                        </div>
                         <label for="plTaxMode">Tax Mode:</label>
                         <select id="plTaxMode">
                             <option value="corporate">Corporate (21%)</option>
@@ -532,6 +556,99 @@
                         <h4>Revenue vs Break-Even Pace</h4>
                         <canvas id="beProgressChart"></canvas>
                     </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Projected Sales Tab -->
+        <div id="projectedsalesTab" style="display: none;">
+            <section class="ps-section">
+                <div class="ps-header">
+                    <h3>Projected Sales</h3>
+                    <div class="ps-controls">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="psEnabled">
+                            <span>Enable Projections</span>
+                        </label>
+                        <button id="psSaveBtn" class="btn btn-primary btn-small">Save</button>
+                    </div>
+                </div>
+
+                <div id="psConfigPanel" class="ps-config-panel" style="display: none;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Projection Start Month</label>
+                            <div class="month-year-select">
+                                <select id="psStartMonth">
+                                    <option value="">Month...</option>
+                                    <option value="01">Jan</option><option value="02">Feb</option>
+                                    <option value="03">Mar</option><option value="04">Apr</option>
+                                    <option value="05">May</option><option value="06">Jun</option>
+                                    <option value="07">Jul</option><option value="08">Aug</option>
+                                    <option value="09">Sep</option><option value="10">Oct</option>
+                                    <option value="11">Nov</option><option value="12">Dec</option>
+                                </select>
+                                <select id="psStartYear">
+                                    <option value="">Year...</option>
+                                </select>
+                            </div>
+                            <p class="field-hint">Months from here onward use projected values. Set before current month to overwrite actuals.</p>
+                        </div>
+                        <div class="form-group">
+                            <p class="field-hint" style="margin-top: 28px;">Each tab (P&amp;L, Cash Flow) has its own Projected/Actual toggle.</p>
+                        </div>
+                    </div>
+
+                    <fieldset class="ps-fieldset">
+                        <legend>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="psOnlineEnabled" checked>
+                                <span>Online Sales Channel</span>
+                            </label>
+                        </legend>
+                        <div id="psOnlineFields" class="form-row">
+                            <div class="form-group">
+                                <label for="psOnlinePrice">Avg. Selling Price</label>
+                                <input type="number" id="psOnlinePrice" step="0.01" min="0" placeholder="0.00">
+                            </div>
+                            <div class="form-group">
+                                <label for="psOnlineCogs">Avg. COGS per Unit</label>
+                                <input type="number" id="psOnlineCogs" step="0.01" min="0" placeholder="0.00">
+                            </div>
+                            <div class="form-group">
+                                <label>CM / Unit</label>
+                                <span id="psOnlineCm" class="ps-cm-preview">$0.00</span>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="ps-fieldset">
+                        <legend>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="psTradeshowEnabled">
+                                <span>Tradeshow Sales Channel</span>
+                            </label>
+                        </legend>
+                        <div id="psTradeshowFields" class="form-row" style="display: none;">
+                            <div class="form-group">
+                                <label for="psTradeshowPrice">Avg. Selling Price</label>
+                                <input type="number" id="psTradeshowPrice" step="0.01" min="0" placeholder="0.00">
+                            </div>
+                            <div class="form-group">
+                                <label for="psTradeshowCogs">Avg. COGS per Unit</label>
+                                <input type="number" id="psTradeshowCogs" step="0.01" min="0" placeholder="0.00">
+                            </div>
+                            <div class="form-group">
+                                <label>CM / Unit</label>
+                                <span id="psTradeshowCm" class="ps-cm-preview">$0.00</span>
+                            </div>
+                        </div>
+                    </fieldset>
+                </div>
+
+                <div id="psSummaryCards" class="ps-summary-cards"></div>
+                <div id="psMonthlyGrid" class="ps-spreadsheet-wrapper">
+                    <p class="empty-state">Enable projections and configure channels to get started.</p>
                 </div>
             </section>
         </div>
@@ -1506,6 +1623,28 @@
                 </div>
             </div>
         </div>
+
+        <!-- Share View-Only Link Modal -->
+        <div id="shareModal" class="modal">
+            <div class="modal-content">
+                <h3>Share View-Only Link</h3>
+                <p id="shareStatus" class="share-status"></p>
+                <div id="shareUrlSection" style="display:none;">
+                    <div class="form-group">
+                        <label>Share URL</label>
+                        <div class="share-url-row">
+                            <input type="text" id="shareUrlDisplay" class="form-control share-url-input" readonly>
+                            <button type="button" id="copyShareUrlBtn" class="btn btn-small">Copy</button>
+                        </div>
+                    </div>
+                    <div id="shareQrCode" class="share-qr-container"></div>
+                    <p id="shareExpiry" class="share-expiry"></p>
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="closeShareBtn" class="btn btn-secondary">Close</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Scripts -->
@@ -1513,6 +1652,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
     <script src="js/utils.js"></script>
     <script src="js/database.js"></script>
     <script src="js/ui.js"></script>

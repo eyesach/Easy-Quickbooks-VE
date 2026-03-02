@@ -626,7 +626,7 @@ const UI = {
      * @param {Object} [cfOverrides] - Map of "categoryId-month" => override_amount
      * @param {string} [currentMonth] - Current month YYYY-MM (for projection styling)
      */
-    renderCashFlowSpreadsheet(spreadsheetData, cfOverrides, currentMonth) {
+    renderCashFlowSpreadsheet(spreadsheetData, cfOverrides, currentMonth, projectedSales) {
         const container = document.getElementById('cashflowSpreadsheet');
         const { months, data } = spreadsheetData;
         cfOverrides = cfOverrides || {};
@@ -643,7 +643,7 @@ const UI = {
         data.forEach(row => {
             const target = row.transaction_type === 'receivable' ? receivableCatMap : payableCatMap;
             if (!target.has(row.category_id)) {
-                target.set(row.category_id, { name: row.category_name, months: {} });
+                target.set(row.category_id, { name: row.category_name, is_b2b: row.is_b2b, is_cogs: row.is_cogs, months: {} });
             }
             const catData = target.get(row.category_id);
             catData.months[row.month] = (catData.months[row.month] || 0) + row.total;
@@ -677,6 +677,15 @@ const UI = {
             return getCFVal(catId, m, fallback);
         };
 
+        // Projected sales integration for cashflow
+        const psActive = projectedSales && projectedSales.enabled && projectedSales.projectionStartMonth;
+        const isProjectedSalesMonth = (m) => psActive && m >= projectedSales.projectionStartMonth;
+        const useProjectedView = (m) => {
+            if (!isProjectedSalesMonth(m)) return false;
+            if (isFuture(m)) return true;
+            return projectedSales.viewMode === 'projected';
+        };
+
         // Calculate per-month totals (using effective projected/override values)
         const monthReceipts = {};
         const monthPayments = {};
@@ -687,15 +696,35 @@ const UI = {
 
         receivableEntries.forEach(([catId, catData]) => {
             months.forEach(m => {
+                // Skip non-B2B categories for projected-view months (projected sales replaces them)
+                if (psActive && !catData.is_b2b && useProjectedView(m)) return;
                 monthReceipts[m] += getEffectiveVal(catId, catData, m);
             });
         });
+
+        // Add projected sales revenue for projected months
+        if (psActive) {
+            months.forEach(m => {
+                if (useProjectedView(m) && projectedSales.byMonth[m]) {
+                    monthReceipts[m] += projectedSales.byMonth[m].revenue;
+                }
+            });
+        }
 
         payableEntries.forEach(([catId, catData]) => {
             months.forEach(m => {
                 monthPayments[m] += getEffectiveVal(catId, catData, m);
             });
         });
+
+        // Add projected sales COGS for projected months (additive)
+        if (psActive) {
+            months.forEach(m => {
+                if (useProjectedView(m) && projectedSales.byMonth[m]) {
+                    monthPayments[m] += projectedSales.byMonth[m].cogs;
+                }
+            });
+        }
 
         // Calculate running beginning balance (ending balance of previous month)
         const beginningBalance = {};
@@ -723,23 +752,48 @@ const UI = {
         // CASH RECEIPTS section header
         html += '<tr class="cashflow-section-header"><td colspan="' + (months.length + 2) + '">Cash Receipts</td></tr>';
 
+        // Projected sales synthetic receivable rows
+        if (psActive) {
+            ['online', 'tradeshow'].forEach(key => {
+                const ch = projectedSales.channels && projectedSales.channels[key];
+                if (!ch || !ch.enabled) return;
+                const label = key === 'online' ? 'Online Revenue (Projected)' : 'Tradeshow Revenue (Projected)';
+                let rowTotal = 0;
+                html += `<tr class="ps-projected-row"><td class="cashflow-indent">${label}</td>`;
+                months.forEach(m => {
+                    if (useProjectedView(m)) {
+                        const val = (projectedSales.byMonth[m] && projectedSales.byMonth[m][key + 'Revenue']) || 0;
+                        rowTotal += val;
+                        html += `<td class="amount-receivable cashflow-projected">${val ? fmtAmt(val) : ''}</td>`;
+                    } else {
+                        html += '<td></td>';
+                    }
+                });
+                html += `<td class="amount-receivable">${fmtAmt(rowTotal)}</td></tr>`;
+            });
+        }
+
         // Individual receivable category rows
         receivableEntries.forEach(([catId, catData]) => {
             let rowTotal = 0;
             html += `<tr draggable="true" data-category-id="${catId}" data-section="receivable">`;
             html += '<td class="cashflow-indent cashflow-drag-handle">' + Utils.escapeHtml(catData.name) + '</td>';
             months.forEach(m => {
-                const amt = getEffectiveVal(catId, catData, m);
-                rowTotal += amt;
-                const overClass = isCFOverridden(catId, m) ? ' pnl-overridden' : '';
-                const projClass = isFuture(m) && !isCFOverridden(catId, m) ? ' cashflow-projected' : '';
-                const editClass = isFuture(m) ? ' cf-editable' : '';
-                html += `<td class="amount-receivable${overClass}${projClass}${editClass}" data-cat-id="${catId}" data-month="${m}">${amt ? fmtAmt(amt) : ''}</td>`;
+                if (psActive && !catData.is_b2b && useProjectedView(m)) {
+                    html += '<td class="ps-replaced">-</td>';
+                } else {
+                    const amt = getEffectiveVal(catId, catData, m);
+                    rowTotal += amt;
+                    const overClass = isCFOverridden(catId, m) ? ' pnl-overridden' : '';
+                    const projClass = isFuture(m) && !isCFOverridden(catId, m) ? ' cashflow-projected' : '';
+                    const editClass = isFuture(m) ? ' cf-editable' : '';
+                    html += `<td class="amount-receivable${overClass}${projClass}${editClass}" data-cat-id="${catId}" data-month="${m}">${amt ? fmtAmt(amt) : ''}</td>`;
+                }
             });
             html += `<td class="amount-receivable">${fmtAmt(rowTotal)}</td></tr>`;
         });
 
-        if (receivableEntries.length === 0) {
+        if (receivableEntries.length === 0 && !psActive) {
             html += '<tr><td class="cashflow-indent" style="color:var(--color-text-muted);font-style:italic;">No receipts</td>';
             months.forEach(() => { html += '<td></td>'; });
             html += '<td></td></tr>';
@@ -764,7 +818,28 @@ const UI = {
         // CASH PAYMENTS section header
         html += '<tr class="cashflow-section-header"><td colspan="' + (months.length + 2) + '">Cash Payments</td></tr>';
 
-        // Individual payable category rows
+        // Projected sales synthetic COGS payment rows
+        if (psActive) {
+            ['online', 'tradeshow'].forEach(key => {
+                const ch = projectedSales.channels && projectedSales.channels[key];
+                if (!ch || !ch.enabled) return;
+                const label = key === 'online' ? 'Online COGS (Projected)' : 'Tradeshow COGS (Projected)';
+                let rowTotal = 0;
+                html += `<tr class="ps-projected-row"><td class="cashflow-indent">${label}</td>`;
+                months.forEach(m => {
+                    if (useProjectedView(m)) {
+                        const val = (projectedSales.byMonth[m] && projectedSales.byMonth[m][key + 'Cogs']) || 0;
+                        rowTotal += val;
+                        html += `<td class="amount-payable cashflow-projected">${val ? fmtAmt(val) : ''}</td>`;
+                    } else {
+                        html += '<td></td>';
+                    }
+                });
+                html += `<td class="amount-payable">${fmtAmt(rowTotal)}</td></tr>`;
+            });
+        }
+
+        // Individual payable category rows — all remain visible and editable
         payableEntries.forEach(([catId, catData]) => {
             let rowTotal = 0;
             html += `<tr draggable="true" data-category-id="${catId}" data-section="payable">`;
@@ -780,7 +855,7 @@ const UI = {
             html += `<td class="amount-payable">${fmtAmt(rowTotal)}</td></tr>`;
         });
 
-        if (payableEntries.length === 0) {
+        if (payableEntries.length === 0 && !psActive) {
             html += '<tr><td class="cashflow-indent" style="color:var(--color-text-muted);font-style:italic;">No payments</td>';
             months.forEach(() => { html += '<td></td>'; });
             html += '<td></td></tr>';
@@ -916,7 +991,7 @@ const UI = {
      * @param {string} taxMode - 'corporate' (21%) or 'passthrough' ($0)
      * @param {string} [currentMonth] - Current month YYYY-MM (for projection styling)
      */
-    renderProfitLossSpreadsheet(plData, overrides, taxMode, currentMonth) {
+    renderProfitLossSpreadsheet(plData, overrides, taxMode, currentMonth, projectedSales) {
         const container = document.getElementById('pnlSpreadsheet');
         const { months, revenue, cogs, opex, depreciation, assetDeprByMonth, loanInterestByMonth } = plData;
 
@@ -947,7 +1022,7 @@ const UI = {
             const map = new Map();
             rows.forEach(row => {
                 if (!map.has(row.category_id)) {
-                    map.set(row.category_id, { name: row.category_name, months: {} });
+                    map.set(row.category_id, { name: row.category_name, is_b2b: row.is_b2b, months: {} });
                 }
                 map.get(row.category_id).months[row.month] = row.total;
             });
@@ -960,6 +1035,15 @@ const UI = {
 
         // Helper: check if month is projected (future)
         const isFuture = (m) => currentMonth && m > currentMonth;
+
+        // Projected sales integration
+        const psActive = projectedSales && projectedSales.enabled && projectedSales.projectionStartMonth;
+        const isProjectedSalesMonth = (m) => psActive && m >= projectedSales.projectionStartMonth;
+        const useProjectedView = (m) => {
+            if (!isProjectedSalesMonth(m)) return false;
+            if (isFuture(m)) return true;
+            return projectedSales.viewMode === 'projected';
+        };
 
         // Compute projected averages per category from past months
         const computeProjectedAvg = (catMonths) => {
@@ -985,7 +1069,57 @@ const UI = {
         const monthRevenue = {};
         months.forEach(m => { monthRevenue[m] = 0; });
 
-        revenueEntries.forEach(([catId, catData]) => {
+        // Separate B2B from non-B2B revenue entries
+        const b2bRevenueEntries = revenueEntries.filter(([, d]) => d.is_b2b);
+        const nonB2bRevenueEntries = revenueEntries.filter(([, d]) => !d.is_b2b);
+
+        // Render projected sales synthetic rows for non-B2B (when active)
+        if (psActive) {
+            ['online', 'tradeshow'].forEach(key => {
+                const ch = projectedSales.channels && projectedSales.channels[key];
+                if (!ch || !ch.enabled) return;
+                const label = key === 'online' ? 'Online Revenue (Projected)' : 'Tradeshow Revenue (Projected)';
+                let rowTotal = 0;
+                html += `<tr class="pnl-indent ps-projected-row"><td>${label}</td>`;
+                months.forEach(m => {
+                    if (useProjectedView(m)) {
+                        const val = (projectedSales.byMonth[m] && projectedSales.byMonth[m][key + 'Revenue']) || 0;
+                        monthRevenue[m] += val;
+                        rowTotal += val;
+                        html += `<td class="pnl-projected">${fmtAmt(val)}</td>`;
+                    } else {
+                        html += '<td></td>';
+                    }
+                });
+                html += `<td>${fmtAmt(rowTotal)}</td></tr>`;
+            });
+        }
+
+        // Non-B2B actual revenue rows (blanked out for projected-view months)
+        nonB2bRevenueEntries.forEach(([catId, catData]) => {
+            let rowTotal = 0;
+            const projAvg = computeProjectedAvg(catData.months);
+            html += `<tr class="pnl-indent"><td>${Utils.escapeHtml(catData.name)}</td>`;
+            months.forEach(m => {
+                if (psActive && useProjectedView(m)) {
+                    // Projected sales covers this month for non-B2B
+                    html += '<td class="ps-replaced">-</td>';
+                } else {
+                    const computed = catData.months[m] || 0;
+                    const fallback = isFuture(m) && computed === 0 ? projAvg : computed;
+                    const val = getVal(catId, m, fallback);
+                    monthRevenue[m] += val;
+                    rowTotal += val;
+                    const overriddenClass = isOverridden(catId, m) ? ' pnl-overridden' : '';
+                    const projClass = isFuture(m) && !isOverridden(catId, m) ? ' pnl-projected' : '';
+                    html += `<td class="pnl-editable${overriddenClass}${projClass}" data-cat-id="${catId}" data-month="${m}">${fmtAmt(val)}</td>`;
+                }
+            });
+            html += `<td>${fmtAmt(rowTotal)}</td></tr>`;
+        });
+
+        // B2B revenue rows — always render normally (unaffected by projected sales)
+        b2bRevenueEntries.forEach(([catId, catData]) => {
             let rowTotal = 0;
             const projAvg = computeProjectedAvg(catData.months);
             html += `<tr class="pnl-indent"><td>${Utils.escapeHtml(catData.name)}</td>`;
@@ -1017,6 +1151,29 @@ const UI = {
         const monthCogs = {};
         months.forEach(m => { monthCogs[m] = 0; });
 
+        // Projected sales synthetic COGS rows (additive — existing COGS rows remain untouched)
+        if (psActive) {
+            ['online', 'tradeshow'].forEach(key => {
+                const ch = projectedSales.channels && projectedSales.channels[key];
+                if (!ch || !ch.enabled) return;
+                const label = key === 'online' ? 'Online COGS (Projected)' : 'Tradeshow COGS (Projected)';
+                let rowTotal = 0;
+                html += `<tr class="pnl-indent ps-projected-row"><td>${label}</td>`;
+                months.forEach(m => {
+                    if (useProjectedView(m)) {
+                        const val = (projectedSales.byMonth[m] && projectedSales.byMonth[m][key + 'Cogs']) || 0;
+                        monthCogs[m] += val;
+                        rowTotal += val;
+                        html += `<td class="pnl-projected">${fmtAmt(val)}</td>`;
+                    } else {
+                        html += '<td></td>';
+                    }
+                });
+                html += `<td>${fmtAmt(rowTotal)}</td></tr>`;
+            });
+        }
+
+        // ALL existing COGS rows — always visible and editable (not replaced by projections)
         cogsEntries.forEach(([catId, catData]) => {
             let rowTotal = 0;
             const projAvg = computeProjectedAvg(catData.months);
@@ -2269,7 +2426,167 @@ const UI = {
 
         html += '</tbody></table>';
         container.innerHTML = html;
-    }
+    },
+
+    // ==================== PROJECTED SALES TAB ====================
+
+    renderProjectedSalesSummaryCards(psData, months) {
+        const container = document.getElementById('psSummaryCards');
+        const { byMonth, config } = psData;
+
+        if (!config.enabled) {
+            container.innerHTML = '';
+            return;
+        }
+
+        let totalRevenue = 0, totalCogs = 0, totalUnits = 0;
+        const projMonths = months.filter(m => byMonth[m]);
+        projMonths.forEach(m => {
+            totalRevenue += byMonth[m].revenue;
+            totalCogs += byMonth[m].cogs;
+            totalUnits += (byMonth[m].onlineUnits || 0) + (byMonth[m].tradeshowUnits || 0);
+        });
+
+        const avgMonthlyRev = projMonths.length > 0 ? totalRevenue / projMonths.length : 0;
+        const gp = totalRevenue - totalCogs;
+        const margin = totalRevenue > 0 ? ((gp / totalRevenue) * 100).toFixed(1) + '%' : '-';
+
+        container.innerHTML = `
+            <div class="be-card"><span class="be-card-label">Projected Revenue</span><span class="be-card-value">${Utils.formatCurrency(totalRevenue)}</span></div>
+            <div class="be-card"><span class="be-card-label">Projected COGS</span><span class="be-card-value">${Utils.formatCurrency(totalCogs)}</span></div>
+            <div class="be-card"><span class="be-card-label">Gross Profit</span><span class="be-card-value">${Utils.formatCurrency(gp)}</span></div>
+            <div class="be-card"><span class="be-card-label">Gross Margin</span><span class="be-card-value">${margin}</span></div>
+            <div class="be-card"><span class="be-card-label">Total Units</span><span class="be-card-value">${totalUnits.toLocaleString()}</span></div>
+            <div class="be-card"><span class="be-card-label">Avg Monthly Rev</span><span class="be-card-value">${Utils.formatCurrency(avgMonthlyRev)}</span></div>
+        `;
+    },
+
+    renderProjectedSalesGrid(psData, months, currentMonth) {
+        const container = document.getElementById('psMonthlyGrid');
+        const { byMonth, channels, config } = psData;
+
+        if (!config.enabled || months.length === 0) {
+            container.innerHTML = '<p class="empty-state">Enable projections and set a start month to view the grid.</p>';
+            return;
+        }
+
+        const fmtMonth = (m) => Utils.formatMonthShort(m);
+        const fmtAmt = (amt) => Utils.formatCurrency(amt);
+        const projStart = config.projectionStartMonth;
+        const isProj = (m) => projStart && m >= projStart;
+        const isFuture = (m) => currentMonth && m > currentMonth;
+        const colSpan = months.length + 2;
+
+        let html = '<table class="pnl-table ps-table"><thead><tr><th></th>';
+        months.forEach(m => {
+            const projClass = isProj(m) ? ' pnl-future-header' : '';
+            const overClass = isProj(m) && !isFuture(m) ? ' ps-overwrite-header' : '';
+            const badge = isProj(m) ? ' <span class="projected-badge">P</span>' : '';
+            html += `<th class="${projClass}${overClass}">${fmtMonth(m)}${badge}</th>`;
+        });
+        html += '<th>Total</th></tr></thead><tbody>';
+
+        // Per-channel sections
+        ['online', 'tradeshow'].forEach(key => {
+            const ch = channels[key];
+            if (!ch || !ch.enabled) return;
+            const label = key === 'online' ? 'Online' : 'Tradeshow';
+
+            html += `<tr class="pnl-section-header"><td colspan="${colSpan}">${label} Channel (${fmtAmt(ch.avgPrice)}/unit, COGS ${fmtAmt(ch.avgCogs)}/unit)</td></tr>`;
+
+            // Units row (editable for projected months)
+            let totalUnits = 0;
+            html += '<tr class="pnl-indent"><td>Units</td>';
+            months.forEach(m => {
+                const units = (byMonth[m] && byMonth[m][key + 'Units']) || 0;
+                totalUnits += units;
+                if (isProj(m)) {
+                    html += `<td class="ps-unit-editable" data-channel="${key}" data-month="${m}">${units || ''}</td>`;
+                } else {
+                    html += `<td>${units || ''}</td>`;
+                }
+            });
+            html += `<td>${totalUnits}</td></tr>`;
+
+            // % Change row
+            html += '<tr class="pnl-percentage"><td>% Change</td>';
+            let prevUnits = 0;
+            months.forEach((m, idx) => {
+                const units = (byMonth[m] && byMonth[m][key + 'Units']) || 0;
+                let pct = '-';
+                if (idx > 0 && prevUnits > 0) {
+                    const change = ((units - prevUnits) / prevUnits * 100).toFixed(1);
+                    pct = (change >= 0 ? '+' : '') + change + '%';
+                }
+                html += `<td>${pct}</td>`;
+                prevUnits = units;
+            });
+            html += '<td></td></tr>';
+
+            // Revenue row
+            let totalRev = 0;
+            html += '<tr class="pnl-indent"><td>Revenue</td>';
+            months.forEach(m => {
+                const rev = (byMonth[m] && byMonth[m][key + 'Revenue']) || 0;
+                totalRev += rev;
+                html += `<td class="amount-receivable">${rev ? fmtAmt(rev) : ''}</td>`;
+            });
+            html += `<td class="amount-receivable">${fmtAmt(totalRev)}</td></tr>`;
+
+            // COGS row
+            let totalCogs = 0;
+            html += '<tr class="pnl-indent"><td>COGS</td>';
+            months.forEach(m => {
+                const cg = (byMonth[m] && byMonth[m][key + 'Cogs']) || 0;
+                totalCogs += cg;
+                html += `<td class="amount-payable">${cg ? fmtAmt(cg) : ''}</td>`;
+            });
+            html += `<td class="amount-payable">${fmtAmt(totalCogs)}</td></tr>`;
+
+            // Gross Profit row
+            let totalGP = 0;
+            html += '<tr class="pnl-subtotal"><td>Gross Profit</td>';
+            months.forEach(m => {
+                const gp = ((byMonth[m] && byMonth[m][key + 'Revenue']) || 0) - ((byMonth[m] && byMonth[m][key + 'Cogs']) || 0);
+                totalGP += gp;
+                html += `<td>${fmtAmt(gp)}</td>`;
+            });
+            html += `<td>${fmtAmt(totalGP)}</td></tr>`;
+        });
+
+        // Combined totals
+        html += `<tr class="pnl-section-header"><td colspan="${colSpan}">Combined Non-B2B Projected Totals</td></tr>`;
+
+        let grandRevenue = 0;
+        html += '<tr class="pnl-subtotal"><td>Total Projected Revenue</td>';
+        months.forEach(m => {
+            const rev = (byMonth[m] && byMonth[m].revenue) || 0;
+            grandRevenue += rev;
+            html += `<td class="amount-receivable">${fmtAmt(rev)}</td>`;
+        });
+        html += `<td class="amount-receivable">${fmtAmt(grandRevenue)}</td></tr>`;
+
+        let grandCogs = 0;
+        html += '<tr class="pnl-subtotal"><td>Total Projected COGS</td>';
+        months.forEach(m => {
+            const cg = (byMonth[m] && byMonth[m].cogs) || 0;
+            grandCogs += cg;
+            html += `<td class="amount-payable">${fmtAmt(cg)}</td>`;
+        });
+        html += `<td class="amount-payable">${fmtAmt(grandCogs)}</td></tr>`;
+
+        let grandGP = 0;
+        html += '<tr class="pnl-total"><td>Total Gross Profit</td>';
+        months.forEach(m => {
+            const gp = ((byMonth[m] && byMonth[m].revenue) || 0) - ((byMonth[m] && byMonth[m].cogs) || 0);
+            grandGP += gp;
+            html += `<td>${fmtAmt(gp)}</td>`;
+        });
+        html += `<td>${fmtAmt(grandGP)}</td></tr>`;
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    },
 };
 
 // Export for use in other modules

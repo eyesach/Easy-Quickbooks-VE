@@ -1030,6 +1030,7 @@ const Database = {
         // Get per-category, per-month totals for completed transactions
         const dataResult = this.db.exec(`
             SELECT c.name as category_name, c.id as category_id,
+                   c.is_b2b, c.is_cogs,
                    t.transaction_type, t.month_paid as month,
                    SUM(t.amount) as total
             FROM transactions t
@@ -1185,6 +1186,7 @@ const Database = {
         // Revenue: receivable categories (not COGS, not hidden), using pretax_amount if available
         const revenueResult = this.db.exec(`
             SELECT c.id as category_id, c.name as category_name,
+                   c.is_b2b,
                    t.month_due as month,
                    SUM(COALESCE(t.pretax_amount, t.amount)) as total
             FROM transactions t
@@ -1201,6 +1203,7 @@ const Database = {
         // COGS: is_cogs=1 categories (not hidden), accrual basis
         const cogsResult = this.db.exec(`
             SELECT c.id as category_id, c.name as category_name,
+                   c.is_b2b,
                    t.month_due as month,
                    SUM(t.amount) as total
             FROM transactions t
@@ -1773,6 +1776,88 @@ const Database = {
             WHERE start_month <= ? AND (end_month IS NULL OR end_month >= ?)
         `, [month, month]);
         return result[0].values[0][0] || 0;
+    },
+
+    // ==================== PROJECTED SALES ====================
+
+    _defaultProjectedSalesConfig() {
+        return {
+            enabled: false,
+            projectionStartMonth: null,
+            viewMode: 'projected',
+            channels: {
+                online: { enabled: true, avgPrice: 0, avgCogs: 0, units: {} },
+                tradeshow: { enabled: false, avgPrice: 0, avgCogs: 0, units: {} }
+            }
+        };
+    },
+
+    getProjectedSalesConfig() {
+        const result = this.db.exec("SELECT value FROM app_meta WHERE key = 'projected_sales_config'");
+        if (result.length === 0 || result[0].values.length === 0) {
+            return this._defaultProjectedSalesConfig();
+        }
+        try {
+            const saved = JSON.parse(result[0].values[0][0]);
+            const defaults = this._defaultProjectedSalesConfig();
+            const merged = Object.assign({}, defaults, saved);
+            merged.channels = Object.assign({}, defaults.channels);
+            if (saved.channels) {
+                if (saved.channels.online) {
+                    merged.channels.online = Object.assign({}, defaults.channels.online, saved.channels.online);
+                }
+                if (saved.channels.tradeshow) {
+                    merged.channels.tradeshow = Object.assign({}, defaults.channels.tradeshow, saved.channels.tradeshow);
+                }
+            }
+            return merged;
+        } catch (e) {
+            return this._defaultProjectedSalesConfig();
+        }
+    },
+
+    setProjectedSalesConfig(config) {
+        this.db.run(
+            "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('projected_sales_config', ?)",
+            [JSON.stringify(config)]
+        );
+        this.autoSave();
+    },
+
+    /**
+     * Compute projected sales spreadsheet data for given months
+     * @param {Object} config - Projected sales config
+     * @param {Array} months - Array of YYYY-MM strings
+     * @returns {Object} { byMonth, channels, config }
+     */
+    getProjectedSalesSpreadsheet(config, months) {
+        config = config || this.getProjectedSalesConfig();
+        if (!config.enabled || !config.projectionStartMonth) {
+            return { byMonth: {}, channels: config.channels, config };
+        }
+        const byMonth = {};
+        (months || []).forEach(m => {
+            if (m < config.projectionStartMonth) return;
+            const entry = {
+                revenue: 0, cogs: 0,
+                onlineUnits: 0, onlineRevenue: 0, onlineCogs: 0,
+                tradeshowUnits: 0, tradeshowRevenue: 0, tradeshowCogs: 0
+            };
+            ['online', 'tradeshow'].forEach(key => {
+                const ch = config.channels[key];
+                if (!ch || !ch.enabled) return;
+                const units = (ch.units && ch.units[m]) || 0;
+                const rev = units * (ch.avgPrice || 0);
+                const cg = units * (ch.avgCogs || 0);
+                entry[key + 'Units'] = units;
+                entry[key + 'Revenue'] = rev;
+                entry[key + 'Cogs'] = cg;
+                entry.revenue += rev;
+                entry.cogs += cg;
+            });
+            byMonth[m] = entry;
+        });
+        return { byMonth, channels: config.channels, config };
     },
 
     // ==================== EQUITY & LOAN CONFIG ====================

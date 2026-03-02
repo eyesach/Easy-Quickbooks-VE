@@ -43,9 +43,18 @@ const App = {
     /**
      * Initialize the application
      */
+    isViewOnly: false,
+
     async init() {
         try {
             document.body.style.opacity = '0.5';
+
+            // Check for share token in URL hash — enter view-only mode
+            const shareMatch = window.location.hash.match(/^#share=(.+)$/);
+            if (shareMatch) {
+                await this.initViewOnlyMode(shareMatch[1]);
+                return;
+            }
 
             await Database.init();
 
@@ -191,7 +200,26 @@ const App = {
             data.months.sort();
         }
 
-        UI.renderCashFlowSpreadsheet(data, cfOverrides, currentMonth);
+        // Get projected sales data for cashflow integration
+        let projectedSales = null;
+        const psConfig = Database.getProjectedSalesConfig();
+        const cfViewToggle = document.getElementById('cfViewToggle');
+        if (psConfig.enabled && psConfig.projectionStartMonth) {
+            const cfViewModeEl = document.getElementById('cfViewMode');
+            const psSpreadsheet = Database.getProjectedSalesSpreadsheet(psConfig, data.months);
+            projectedSales = {
+                enabled: true,
+                projectionStartMonth: psConfig.projectionStartMonth,
+                byMonth: psSpreadsheet.byMonth,
+                channels: psSpreadsheet.channels,
+                viewMode: cfViewModeEl ? cfViewModeEl.value : 'projected'
+            };
+            if (cfViewToggle) cfViewToggle.style.display = 'flex';
+        } else {
+            if (cfViewToggle) cfViewToggle.style.display = 'none';
+        }
+
+        UI.renderCashFlowSpreadsheet(data, cfOverrides, currentMonth, projectedSales);
         this.setupCashFlowDragDrop();
         this.setupCashFlowCellEditing();
     },
@@ -545,10 +573,29 @@ const App = {
             plData.months.sort();
         }
 
+        // Get projected sales data for P&L integration
+        let projectedSales = null;
+        const psConfig = Database.getProjectedSalesConfig();
+        const pnlViewToggle = document.getElementById('pnlViewToggle');
+        if (psConfig.enabled && psConfig.projectionStartMonth) {
+            const pnlViewMode = document.getElementById('pnlViewMode');
+            const psSpreadsheet = Database.getProjectedSalesSpreadsheet(psConfig, plData.months);
+            projectedSales = {
+                enabled: true,
+                projectionStartMonth: psConfig.projectionStartMonth,
+                byMonth: psSpreadsheet.byMonth,
+                channels: psSpreadsheet.channels,
+                viewMode: pnlViewMode ? pnlViewMode.value : 'projected'
+            };
+            if (pnlViewToggle) pnlViewToggle.style.display = 'flex';
+        } else {
+            if (pnlViewToggle) pnlViewToggle.style.display = 'none';
+        }
+
         // Sync dropdown
         const taxModeSelect = document.getElementById('plTaxMode');
         if (taxModeSelect) taxModeSelect.value = taxMode;
-        UI.renderProfitLossSpreadsheet(plData, overrides, taxMode, currentMonth);
+        UI.renderProfitLossSpreadsheet(plData, overrides, taxMode, currentMonth, projectedSales);
         this.setupPnLCellEditing();
     },
 
@@ -618,7 +665,7 @@ const App = {
             btn.classList.toggle('active', btn.dataset.tab === tab);
         });
 
-        const tabs = ['journalTab', 'cashflowTab', 'pnlTab', 'balancesheetTab', 'assetsTab', 'loanTab', 'budgetTab', 'breakevenTab'];
+        const tabs = ['journalTab', 'cashflowTab', 'pnlTab', 'balancesheetTab', 'assetsTab', 'loanTab', 'budgetTab', 'breakevenTab', 'projectedsalesTab'];
         tabs.forEach(id => {
             const el = document.getElementById(id);
             if (el) el.style.display = 'none';
@@ -645,6 +692,9 @@ const App = {
         } else if (tab === 'breakeven') {
             document.getElementById('breakevenTab').style.display = 'block';
             this.refreshBreakeven();
+        } else if (tab === 'projectedsales') {
+            document.getElementById('projectedsalesTab').style.display = 'block';
+            this.refreshProjectedSales();
         } else {
             document.getElementById('journalTab').style.display = 'block';
         }
@@ -1484,6 +1534,42 @@ const App = {
             }
         });
 
+        // ==================== PROJECTED SALES ====================
+        document.getElementById('psSaveBtn').addEventListener('click', () => this.handleSaveProjectedSales());
+        document.getElementById('psEnabled').addEventListener('change', (e) => {
+            document.getElementById('psConfigPanel').style.display = e.target.checked ? 'block' : 'none';
+        });
+        document.getElementById('psOnlineEnabled').addEventListener('change', (e) => {
+            document.getElementById('psOnlineFields').style.display = e.target.checked ? 'flex' : 'none';
+        });
+        document.getElementById('psTradeshowEnabled').addEventListener('change', (e) => {
+            document.getElementById('psTradeshowFields').style.display = e.target.checked ? 'flex' : 'none';
+        });
+        // CM preview live updates
+        ['psOnlinePrice', 'psOnlineCogs'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => {
+                const price = parseFloat(document.getElementById('psOnlinePrice').value) || 0;
+                const cogs = parseFloat(document.getElementById('psOnlineCogs').value) || 0;
+                document.getElementById('psOnlineCm').textContent = Utils.formatCurrency(price - cogs);
+            });
+        });
+        ['psTradeshowPrice', 'psTradeshowCogs'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => {
+                const price = parseFloat(document.getElementById('psTradeshowPrice').value) || 0;
+                const cogs = parseFloat(document.getElementById('psTradeshowCogs').value) || 0;
+                document.getElementById('psTradeshowCm').textContent = Utils.formatCurrency(price - cogs);
+            });
+        });
+        // Per-tab view mode toggles (P&L and Cashflow each have their own)
+        const pnlViewMode = document.getElementById('pnlViewMode');
+        if (pnlViewMode) {
+            pnlViewMode.addEventListener('change', () => this.refreshPnL());
+        }
+        const cfViewMode = document.getElementById('cfViewMode');
+        if (cfViewMode) {
+            cfViewMode.addEventListener('change', () => this.refreshCashFlow());
+        }
+
         // ==================== MODALS & KEYBOARD ====================
 
         // Close modals on outside click
@@ -1628,6 +1714,18 @@ const App = {
         document.getElementById('confirmRemoveMemberBtn').addEventListener('click', () => {
             this.handleConfirmRemoveMember();
         });
+
+        // Share view-only link
+        document.getElementById('shareBtn').addEventListener('click', () => {
+            this.shareJournal();
+        });
+        document.getElementById('closeShareBtn').addEventListener('click', () => {
+            UI.hideModal('shareModal');
+        });
+        document.getElementById('copyShareUrlBtn').addEventListener('click', () => {
+            const url = document.getElementById('shareUrlDisplay').value;
+            if (url) this.copyToClipboard(url);
+        });
     },
 
     // ==================== FORM HANDLERS ====================
@@ -1636,6 +1734,7 @@ const App = {
      * Handle form submission (add/edit transaction)
      */
     handleFormSubmit() {
+        if (this._guardViewOnly()) return;
         const data = UI.getFormData();
         const validation = UI.validateFormData(data);
 
@@ -1699,6 +1798,7 @@ const App = {
      * Handle saving a category (add or edit)
      */
     handleSaveCategory() {
+        if (this._guardViewOnly()) return;
         const nameInput = document.getElementById('categoryName');
         const name = nameInput.value.trim();
         const isMonthly = document.getElementById('categoryMonthly').checked;
@@ -1822,6 +1922,7 @@ const App = {
      * @param {number} id - Category ID
      */
     handleDeleteCategory(id) {
+        if (this._guardViewOnly()) return;
         const category = Database.getCategoryById(id);
         if (!category) return;
 
@@ -1877,6 +1978,7 @@ const App = {
      * Handle saving a folder (add or edit)
      */
     handleSaveFolder() {
+        if (this._guardViewOnly()) return;
         const name = document.getElementById('folderName').value.trim();
         const editingId = document.getElementById('editingFolderId').value;
         const folderType = document.querySelector('input[name="folderType"]:checked').value;
@@ -1950,6 +2052,7 @@ const App = {
      * @param {number} id - Folder ID
      */
     handleDeleteFolder(id) {
+        if (this._guardViewOnly()) return;
         const folder = Database.getFolderById(id);
         if (!folder) return;
 
@@ -4069,6 +4172,7 @@ const App = {
      * Confirm and load database from file
      */
     async confirmLoadDatabase() {
+        if (this._guardViewOnly()) return;
         if (!this.pendingFileLoad) return;
 
         try {
@@ -4108,11 +4212,163 @@ const App = {
         }
     },
 
+    // ==================== PROJECTED SALES ====================
+
+    refreshProjectedSales() {
+        const config = Database.getProjectedSalesConfig();
+        const timeline = this.getTimeline();
+        const currentMonth = Utils.getCurrentMonth();
+
+        // Sync UI controls
+        document.getElementById('psEnabled').checked = config.enabled;
+        document.getElementById('psConfigPanel').style.display = config.enabled ? 'block' : 'none';
+
+        // Populate year selects
+        const years = Utils.generateYearOptions();
+        const yearSelect = document.getElementById('psStartYear');
+        if (yearSelect && yearSelect.options.length <= 1) {
+            yearSelect.innerHTML = '<option value="">Year...</option>';
+            years.forEach(y => {
+                const opt = document.createElement('option');
+                opt.value = y; opt.textContent = y;
+                yearSelect.appendChild(opt);
+            });
+        }
+
+        // Sync projection start month
+        if (config.projectionStartMonth) {
+            const [y, m] = config.projectionStartMonth.split('-');
+            document.getElementById('psStartMonth').value = m;
+            document.getElementById('psStartYear').value = y;
+        } else {
+            document.getElementById('psStartMonth').value = '';
+            document.getElementById('psStartYear').value = '';
+        }
+
+        // Sync channel fields
+        this._syncPsChannel('online', config.channels.online);
+        this._syncPsChannel('tradeshow', config.channels.tradeshow);
+
+        // Determine months from timeline
+        let months = [];
+        const startMonth = timeline.start || config.projectionStartMonth;
+        const endMonth = timeline.end;
+        if (startMonth && endMonth) {
+            months = Utils.generateMonthRange(startMonth, endMonth);
+        } else if (config.projectionStartMonth) {
+            // Fallback: projection start to 12 months from now
+            let end = currentMonth;
+            for (let i = 0; i < 12; i++) end = Utils.nextMonth(end);
+            months = Utils.generateMonthRange(config.projectionStartMonth, endMonth || end);
+        }
+
+        // Get spreadsheet data and render
+        const psData = Database.getProjectedSalesSpreadsheet(config, months);
+        UI.renderProjectedSalesSummaryCards(psData, months);
+        UI.renderProjectedSalesGrid(psData, months, currentMonth);
+        this.setupPsUnitEditing();
+    },
+
+    _syncPsChannel(key, ch) {
+        const prefix = key === 'online' ? 'psOnline' : 'psTradeshow';
+        document.getElementById(prefix + 'Enabled').checked = ch.enabled;
+        document.getElementById(prefix + 'Fields').style.display = ch.enabled ? 'flex' : 'none';
+        document.getElementById(prefix + 'Price').value = ch.avgPrice || '';
+        document.getElementById(prefix + 'Cogs').value = ch.avgCogs || '';
+        const cm = (ch.avgPrice || 0) - (ch.avgCogs || 0);
+        document.getElementById(prefix + 'Cm').textContent = Utils.formatCurrency(cm);
+    },
+
+    handleSaveProjectedSales() {
+        const startM = document.getElementById('psStartMonth').value;
+        const startY = document.getElementById('psStartYear').value;
+        const existing = Database.getProjectedSalesConfig();
+
+        const config = {
+            enabled: document.getElementById('psEnabled').checked,
+            projectionStartMonth: (startM && startY) ? `${startY}-${startM}` : null,
+            channels: {
+                online: {
+                    enabled: document.getElementById('psOnlineEnabled').checked,
+                    avgPrice: parseFloat(document.getElementById('psOnlinePrice').value) || 0,
+                    avgCogs: parseFloat(document.getElementById('psOnlineCogs').value) || 0,
+                    units: existing.channels.online.units || {}
+                },
+                tradeshow: {
+                    enabled: document.getElementById('psTradeshowEnabled').checked,
+                    avgPrice: parseFloat(document.getElementById('psTradeshowPrice').value) || 0,
+                    avgCogs: parseFloat(document.getElementById('psTradeshowCogs').value) || 0,
+                    units: existing.channels.tradeshow.units || {}
+                }
+            }
+        };
+
+        Database.setProjectedSalesConfig(config);
+        this.refreshProjectedSales();
+        UI.showNotification('Projected sales saved', 'success');
+    },
+
+    setupPsUnitEditing() {
+        const container = document.getElementById('psMonthlyGrid');
+        if (!container || container.dataset.psUnitSetup) return;
+        container.dataset.psUnitSetup = '1';
+
+        container.addEventListener('click', (e) => {
+            const cell = e.target.closest('.ps-unit-editable');
+            if (!cell || cell.querySelector('input')) return;
+
+            const channel = cell.dataset.channel;
+            const month = cell.dataset.month;
+            const currentVal = parseInt(cell.textContent.trim()) || 0;
+
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.min = '0';
+            input.step = '1';
+            input.className = 'pnl-cell-input';
+            input.value = currentVal || '';
+
+            cell.textContent = '';
+            cell.appendChild(input);
+            input.focus();
+            input.select();
+
+            const save = () => {
+                const newVal = parseInt(input.value) || 0;
+                const config = Database.getProjectedSalesConfig();
+                if (!config.channels[channel].units) config.channels[channel].units = {};
+                if (newVal > 0) {
+                    config.channels[channel].units[month] = newVal;
+                } else {
+                    delete config.channels[channel].units[month];
+                }
+                Database.setProjectedSalesConfig(config);
+                // Re-render grid (reset flag so editing can re-bind)
+                delete container.dataset.psUnitSetup;
+                this.refreshProjectedSales();
+            };
+
+            input.addEventListener('blur', save);
+            input.addEventListener('keydown', (ke) => {
+                if (ke.key === 'Enter') { ke.preventDefault(); input.blur(); }
+                else if (ke.key === 'Escape') {
+                    ke.preventDefault();
+                    delete container.dataset.psUnitSetup;
+                    this.refreshProjectedSales();
+                }
+            });
+        });
+    },
+
     // ==================== SYNC / GROUP SHARING ====================
 
     async initSync() {
         const supaConfig = Database.getSupabaseConfig();
         if (!supaConfig || !supaConfig.url || !supaConfig.anonKey) return;
+
+        // Show share button when Supabase is configured
+        const shareBtn = document.getElementById('shareBtn');
+        if (shareBtn) shareBtn.style.display = '';
 
         SupabaseAdapter.init(supaConfig.url, supaConfig.anonKey);
         SyncService.api = SupabaseAdapter;
@@ -4440,6 +4696,205 @@ const App = {
             if (disconnectedPanel) disconnectedPanel.style.display = '';
             if (connectedPanel) connectedPanel.style.display = 'none';
         }
+    },
+
+    // ==================== SHARE VIEW-ONLY LINK ====================
+
+    async shareJournal() {
+        const supaConfig = Database.getSupabaseConfig();
+        if (!supaConfig || !supaConfig.url || !supaConfig.anonKey) {
+            UI.showNotification('Sharing requires Supabase. Set up Group Sync first.', 'error');
+            return;
+        }
+
+        if (!SupabaseAdapter.isInitialized()) {
+            SupabaseAdapter.init(supaConfig.url, supaConfig.anonKey);
+        }
+
+        // Show modal with loading state
+        document.getElementById('shareStatus').textContent = 'Uploading snapshot...';
+        document.getElementById('shareUrlSection').style.display = 'none';
+        UI.showModal('shareModal');
+
+        try {
+            const blob = new Uint8Array(Database.db.export());
+            const journalName = Database.getJournalOwner() || 'Accounting Journal';
+            const syncConfig = Database.getSyncConfig();
+            const createdBy = (syncConfig && syncConfig.userName) || journalName;
+
+            const result = await SupabaseAdapter.createShare(blob, createdBy, journalName);
+
+            // Build share URL
+            const shareToken = btoa(JSON.stringify({
+                s: result.shareId,
+                u: supaConfig.url,
+                k: supaConfig.anonKey
+            }));
+            const shareUrl = window.location.origin + window.location.pathname + '#share=' + shareToken;
+
+            // Display
+            document.getElementById('shareUrlDisplay').value = shareUrl;
+            document.getElementById('shareStatus').textContent = '';
+            document.getElementById('shareUrlSection').style.display = '';
+            document.getElementById('shareExpiry').textContent =
+                'Expires: ' + new Date(result.expiresAt).toLocaleDateString();
+
+            this.generateShareQR(shareUrl);
+        } catch (err) {
+            console.error('Share failed:', err);
+            document.getElementById('shareStatus').textContent = 'Share failed: ' + err.message;
+        }
+    },
+
+    generateShareQR(url) {
+        const container = document.getElementById('shareQrCode');
+        container.innerHTML = '';
+        if (typeof qrcode === 'undefined') {
+            container.textContent = 'QR library not loaded';
+            return;
+        }
+        const qr = qrcode(0, 'M');
+        qr.addData(url);
+        qr.make();
+        container.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 4 });
+    },
+
+    // ==================== VIEW-ONLY MODE ====================
+
+    async initViewOnlyMode(token) {
+        try {
+            const decoded = JSON.parse(atob(token));
+            if (!decoded.s || !decoded.u || !decoded.k) {
+                throw new Error('Invalid share link');
+            }
+
+            // Initialize a temporary Supabase client (do NOT save to localStorage)
+            const tempClient = supabase.createClient(decoded.u, decoded.k);
+
+            // Fetch share metadata
+            const { data: shareMeta, error: metaErr } = await tempClient
+                .from('shares')
+                .select('id, created_at, expires_at, size_bytes, storage_path, created_by, journal_name')
+                .eq('id', decoded.s)
+                .single();
+
+            if (metaErr || !shareMeta) {
+                throw new Error('Share not found. It may have been deleted.');
+            }
+
+            if (new Date(shareMeta.expires_at) < new Date()) {
+                throw new Error('This share link has expired.');
+            }
+
+            // Download the blob from storage
+            const { data: blobData, error: blobErr } = await tempClient.storage
+                .from('db-blobs')
+                .download(shareMeta.storage_path);
+            if (blobErr) throw new Error('Failed to download shared journal');
+
+            const arrayBuffer = await blobData.arrayBuffer();
+            const uint8Array = new Uint8Array(arrayBuffer);
+
+            // Initialize sql.js and load the blob (skip IndexedDB entirely)
+            const SQL = await initSqlJs({
+                locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+            });
+            Database.SQL = SQL;
+            Database.db = new SQL.Database(uint8Array);
+            Database.migrateSchema();
+
+            // Disable auto-save — never write to IndexedDB in view-only mode
+            Database.autoSave = function() {};
+
+            this.isViewOnly = true;
+
+            // Set up UI
+            document.getElementById('entryDate').value = Utils.getTodayDate();
+            UI.populateYearDropdowns();
+            UI.populatePaymentForMonthDropdown();
+
+            const owner = shareMeta.journal_name || Database.getJournalOwner();
+            document.getElementById('journalOwner').value = owner;
+            document.getElementById('journalOwner').disabled = true;
+            UI.updateJournalTitle(owner);
+
+            this.loadAndApplyTheme();
+            this.restoreTabOrder();
+            this.setupTabDragDrop();
+            this.loadAndApplyTimeline();
+            this.refreshAll();
+            this.setupEventListeners();
+            this.applyViewOnlyRestrictions();
+            this.showViewOnlyBanner(shareMeta);
+
+            document.body.style.opacity = '1';
+            console.log('View-only mode initialized');
+        } catch (err) {
+            console.error('Failed to load shared journal:', err);
+            document.body.style.opacity = '1';
+            document.body.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:DM Sans,sans-serif;">' +
+                '<div style="text-align:center;max-width:420px;padding:40px;">' +
+                '<h2 style="margin-bottom:12px;">Unable to Load Shared Journal</h2>' +
+                '<p style="color:#6c757d;">' + this._escapeHtml(err.message) + '</p>' +
+                '<p style="margin-top:24px;"><a href="' + window.location.origin + window.location.pathname + '">Go to app</a></p>' +
+                '</div></div>';
+        }
+    },
+
+    applyViewOnlyRestrictions() {
+        const hideIds = [
+            'newEntryBtn', 'addFolderEntriesBtn', 'manageCategoriesBtn',
+            'saveDbBtn', 'saveAsDbBtn', 'loadDbBtn', 'shareBtn'
+        ];
+        hideIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+
+        const loadInput = document.getElementById('loadDbInput');
+        if (loadInput) loadInput.style.display = 'none';
+
+        const syncWrapper = document.querySelector('.sync-wrapper');
+        if (syncWrapper) syncWrapper.style.display = 'none';
+
+        const gearWrapper = document.querySelector('.gear-wrapper');
+        if (gearWrapper) gearWrapper.style.display = 'none';
+
+        document.body.classList.add('view-only-mode');
+    },
+
+    showViewOnlyBanner(shareMeta) {
+        const banner = document.createElement('div');
+        banner.className = 'view-only-banner';
+
+        const createdDate = new Date(shareMeta.created_at).toLocaleDateString();
+        const createdBy = shareMeta.created_by || 'Unknown';
+        const journalName = shareMeta.journal_name || 'Journal';
+
+        banner.innerHTML =
+            '<div class="view-only-banner-content">' +
+            '<span>&#128274;</span> ' +
+            '<span><strong>View-Only Snapshot</strong> &mdash; ' +
+            this._escapeHtml(journalName) + ' &middot; Shared by ' +
+            this._escapeHtml(createdBy) + ' on ' + createdDate + '</span>' +
+            '</div>';
+
+        document.body.insertBefore(banner, document.body.firstChild);
+    },
+
+    _guardViewOnly() {
+        if (this.isViewOnly) {
+            UI.showNotification('This is a view-only snapshot. Editing is not available.', 'info');
+            return true;
+        }
+        return false;
+    },
+
+    _escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
     },
 
     async openVersionHistory() {

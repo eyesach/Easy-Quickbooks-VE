@@ -212,6 +212,48 @@ const SupabaseAdapter = {
         return data || [];
     },
 
+    // ==================== SHARES (VIEW-ONLY SNAPSHOTS) ====================
+
+    async createShare(blob, createdBy, journalName) {
+        const { data, error } = await this._client
+            .from('shares')
+            .insert({
+                size_bytes: blob.length,
+                storage_path: '',
+                created_by: createdBy || 'Unknown',
+                journal_name: journalName || ''
+            })
+            .select()
+            .single();
+        if (error) throw new Error('Failed to create share: ' + error.message);
+
+        const path = `shares/${data.id}.db`;
+        await this._uploadBlob(path, blob);
+
+        const { error: updateErr } = await this._client
+            .from('shares')
+            .update({ storage_path: path })
+            .eq('id', data.id);
+        if (updateErr) throw new Error('Failed to update share path: ' + updateErr.message);
+
+        return { shareId: data.id, expiresAt: data.expires_at };
+    },
+
+    async getShare(shareId) {
+        const { data, error } = await this._client
+            .from('shares')
+            .select('id, created_at, expires_at, size_bytes, storage_path, created_by, journal_name')
+            .eq('id', shareId)
+            .single();
+        if (error || !data) return null;
+        if (new Date(data.expires_at) < new Date()) return null;
+        return data;
+    },
+
+    async downloadShareBlob(storagePath) {
+        return this._downloadBlob(storagePath);
+    },
+
     // ==================== INTERNALS ====================
 
     _storagePath(groupId, version) {

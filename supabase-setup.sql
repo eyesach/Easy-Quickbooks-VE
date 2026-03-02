@@ -221,6 +221,20 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- 11. Shares table (view-only snapshots)
+CREATE TABLE shares (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '30 days'),
+    size_bytes INTEGER NOT NULL,
+    storage_path TEXT NOT NULL,
+    created_by TEXT,
+    journal_name TEXT
+);
+
+ALTER TABLE shares ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on shares" ON shares FOR ALL USING (true) WITH CHECK (true);
+
 -- ============================================================
 -- STORAGE SETUP (do these in the Supabase Dashboard UI):
 --
