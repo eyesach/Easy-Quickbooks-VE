@@ -1278,6 +1278,23 @@ const Database = {
         this.autoSave();
     },
 
+    /**
+     * Get/set persisted as-of month for a given tab
+     * @param {string} tab - 'pnl' or 'cf'
+     */
+    getAsOfMonth(tab) {
+        const key = tab + '_as_of_month';
+        const result = this.db.exec("SELECT value FROM app_meta WHERE key = ?", [key]);
+        if (result.length === 0 || result[0].values.length === 0) return 'current';
+        return result[0].values[0][0] || 'current';
+    },
+
+    setAsOfMonth(tab, value) {
+        const key = tab + '_as_of_month';
+        this.db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)", [key, value]);
+        this.autoSave();
+    },
+
     // ==================== THEME SETTINGS ====================
 
     /**
@@ -1785,6 +1802,7 @@ const Database = {
             enabled: false,
             projectionStartMonth: null,
             viewMode: 'projected',
+            salesTaxRate: 0,
             channels: {
                 online: { enabled: true, avgPrice: 0, avgCogs: 0, units: {} },
                 tradeshow: { enabled: false, avgPrice: 0, avgCogs: 0, units: {} }
@@ -1839,7 +1857,7 @@ const Database = {
         (months || []).forEach(m => {
             if (m < config.projectionStartMonth) return;
             const entry = {
-                revenue: 0, cogs: 0,
+                revenue: 0, cogs: 0, salesTax: 0,
                 onlineUnits: 0, onlineRevenue: 0, onlineCogs: 0,
                 tradeshowUnits: 0, tradeshowRevenue: 0, tradeshowCogs: 0
             };
@@ -1855,6 +1873,9 @@ const Database = {
                 entry.revenue += rev;
                 entry.cogs += cg;
             });
+            // Sales tax on total non-B2B revenue
+            const taxRate = (config.salesTaxRate || 0) / 100;
+            entry.salesTax = Math.round(entry.revenue * taxRate * 100) / 100;
             byMonth[m] = entry;
         });
         return { byMonth, channels: config.channels, config };
@@ -2326,6 +2347,16 @@ const Database = {
                 [categoryId, month, parseFloat(amount)]
             );
         }
+        this.autoSave();
+    },
+
+    clearPLOverridesFrom(startMonth) {
+        this.db.run('DELETE FROM pl_overrides WHERE month >= ?', [startMonth]);
+        this.autoSave();
+    },
+
+    clearCashFlowOverridesFrom(startMonth) {
+        this.db.run('DELETE FROM cashflow_overrides WHERE month >= ?', [startMonth]);
         this.autoSave();
     },
 

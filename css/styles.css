@@ -2124,6 +2124,215 @@ body {
     }
 }
 
+/* ==================== MOBILE (iPhone) ==================== */
+@media (max-width: 480px) {
+    .app-container {
+        padding: 10px;
+    }
+
+    .app-header {
+        padding-bottom: 10px;
+        margin-bottom: 14px;
+    }
+
+    .journal-owner-input {
+        font-size: 1.2rem;
+    }
+
+    .journal-suffix {
+        font-size: 1rem;
+    }
+
+    /* Scrollable tab bar */
+    .main-tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        flex-wrap: nowrap;
+    }
+    .main-tabs::-webkit-scrollbar {
+        display: none;
+    }
+    .main-tab {
+        flex: 0 0 auto;
+        padding: 8px 12px;
+        font-size: 0.72rem;
+        white-space: nowrap;
+    }
+
+    /* Smooth-scroll spreadsheet wrappers on iOS */
+    .cashflow-spreadsheet-wrapper,
+    .pnl-spreadsheet-wrapper,
+    .ps-spreadsheet-wrapper {
+        -webkit-overflow-scrolling: touch;
+        overflow-x: auto;
+    }
+
+    /* Reduce section padding so tables extend closer to screen edges */
+    .cashflow-section,
+    .pnl-section,
+    .ps-section,
+    .bs-section,
+    .transactions-section {
+        padding: 10px;
+        border-radius: var(--radius-sm);
+    }
+    .pnl-header,
+    .ps-header,
+    .bs-header {
+        padding: 10px 12px;
+    }
+    .pnl-spreadsheet-wrapper,
+    .cashflow-spreadsheet-wrapper {
+        margin: 0 -10px;
+        padding: 0 10px;
+    }
+
+    /* Narrower sticky first column on mobile */
+    .cashflow-table th:first-child,
+    .cashflow-table td:first-child {
+        min-width: 120px;
+        font-size: 0.7rem;
+    }
+
+    .pnl-table th:first-child,
+    .pnl-table td:first-child {
+        min-width: 110px;
+        font-size: 0.7rem;
+    }
+
+    /* Smaller table text */
+    .cashflow-table {
+        font-size: 0.7rem;
+    }
+    .cashflow-table th {
+        font-size: 0.6rem;
+    }
+    .pnl-table {
+        font-size: 0.72rem;
+        min-width: 400px;
+    }
+    .pnl-table th {
+        font-size: 0.62rem;
+    }
+    .bs-table {
+        font-size: 0.8rem;
+    }
+    .bs-table td {
+        padding: 6px 10px;
+    }
+
+    /* Compact transaction table */
+    .transaction-table {
+        font-size: 0.8rem;
+    }
+    .transaction-table th,
+    .transaction-table td {
+        padding: 8px 8px;
+    }
+
+    /* View-toggle row wraps on small screens */
+    .ps-view-toggle {
+        flex-wrap: wrap;
+        gap: 4px 8px;
+    }
+    .ps-toggle-label {
+        font-size: 0.65rem;
+    }
+    .ps-toggle-select {
+        font-size: 0.7rem;
+        padding: 3px 4px;
+    }
+    .ps-asof-select {
+        min-width: 90px;
+    }
+    .ps-reset-btn {
+        font-size: 0.65rem;
+        padding: 2px 6px;
+    }
+
+    /* Modals nearly full-width */
+    .modal-content {
+        width: 95%;
+        max-height: 90vh;
+        padding: 16px;
+    }
+    .modal-content.modal-entry,
+    .modal-content.modal-wide {
+        max-width: 95%;
+    }
+
+    /* Header actions wrap nicely */
+    .header-actions {
+        gap: 4px;
+    }
+    .header-actions .btn {
+        font-size: 0.75rem;
+        padding: 6px 10px;
+    }
+
+    /* Projected sales config compact */
+    .ps-config-panel {
+        padding: 12px;
+    }
+    .ps-fieldset {
+        padding: 10px;
+    }
+    .ps-header {
+        padding: 12px;
+    }
+
+    /* Summary cards single-column */
+    .ps-summary-cards {
+        grid-template-columns: repeat(2, 1fr);
+        padding: 10px;
+        gap: 8px;
+    }
+
+    /* Filters */
+    .filter-group label {
+        font-size: 0.7rem;
+    }
+
+    /* Toolbar */
+    .toolbar-section {
+        gap: 6px;
+    }
+
+    /* Cashflow summary cards scroll */
+    .cashflow-summary-months {
+        gap: 8px;
+    }
+    .cashflow-summary-card {
+        min-width: 110px;
+    }
+
+    /* Notification position */
+    .notification {
+        right: 10px;
+        left: 10px;
+        text-align: center;
+    }
+
+    /* Budget/break-even tables */
+    .be-summary-cards {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    /* Share modal */
+    .share-url-input {
+        font-size: 0.65rem;
+    }
+
+    /* Prevent iOS auto-zoom on input focus (requires >= 16px) */
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        font-size: 16px;
+    }
+}
+
 /* (Theme controls moved to gear popover) */
 
 /* Notification classes */
@@ -3799,6 +4008,17 @@ body.view-only-mode .cf-editable-cell {
     border-radius: var(--radius-sm);
     background: var(--color-white);
     color: var(--color-text);
+}
+
+.ps-asof-select {
+    min-width: 110px;
+}
+
+.ps-reset-btn {
+    margin-left: 8px;
+    font-size: 0.75rem;
+    padding: 3px 10px;
+    white-space: nowrap;
 }
 
 @media (max-width: 900px) {

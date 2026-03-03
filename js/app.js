@@ -205,14 +205,31 @@ const App = {
         const psConfig = Database.getProjectedSalesConfig();
         const cfViewToggle = document.getElementById('cfViewToggle');
         if (psConfig.enabled && psConfig.projectionStartMonth) {
+            // Ensure continuous month range through at least currentMonth for projections
+            const lastNeeded = data.months.length > 0 && data.months[data.months.length - 1] > currentMonth
+                ? data.months[data.months.length - 1] : currentMonth;
+            let fill = psConfig.projectionStartMonth;
+            while (fill <= lastNeeded) {
+                if (!data.months.includes(fill)) data.months.push(fill);
+                fill = Utils.nextMonth(fill);
+            }
+            data.months.sort();
+
             const cfViewModeEl = document.getElementById('cfViewMode');
+            const cfAsOfEl = document.getElementById('cfAsOfMonth');
             const psSpreadsheet = Database.getProjectedSalesSpreadsheet(psConfig, data.months);
+
+            // Populate as-of dropdown with timeline months (restore saved value)
+            this._populateAsOfSelect(cfAsOfEl, data.months, Database.getAsOfMonth('cf'));
+
+            const asOfVal = cfAsOfEl ? cfAsOfEl.value : 'current';
             projectedSales = {
                 enabled: true,
                 projectionStartMonth: psConfig.projectionStartMonth,
                 byMonth: psSpreadsheet.byMonth,
                 channels: psSpreadsheet.channels,
-                viewMode: cfViewModeEl ? cfViewModeEl.value : 'projected'
+                viewMode: cfViewModeEl ? cfViewModeEl.value : 'projected',
+                asOfMonth: asOfVal !== 'current' ? asOfVal : null
             };
             if (cfViewToggle) cfViewToggle.style.display = 'flex';
         } else {
@@ -578,14 +595,31 @@ const App = {
         const psConfig = Database.getProjectedSalesConfig();
         const pnlViewToggle = document.getElementById('pnlViewToggle');
         if (psConfig.enabled && psConfig.projectionStartMonth) {
+            // Ensure continuous month range through at least currentMonth for projections
+            const lastNeeded = plData.months.length > 0 && plData.months[plData.months.length - 1] > currentMonth
+                ? plData.months[plData.months.length - 1] : currentMonth;
+            let fill = psConfig.projectionStartMonth;
+            while (fill <= lastNeeded) {
+                if (!plData.months.includes(fill)) plData.months.push(fill);
+                fill = Utils.nextMonth(fill);
+            }
+            plData.months.sort();
+
             const pnlViewMode = document.getElementById('pnlViewMode');
+            const pnlAsOfEl = document.getElementById('pnlAsOfMonth');
             const psSpreadsheet = Database.getProjectedSalesSpreadsheet(psConfig, plData.months);
+
+            // Populate as-of dropdown with timeline months (restore saved value)
+            this._populateAsOfSelect(pnlAsOfEl, plData.months, Database.getAsOfMonth('pnl'));
+
+            const asOfVal = pnlAsOfEl ? pnlAsOfEl.value : 'current';
             projectedSales = {
                 enabled: true,
                 projectionStartMonth: psConfig.projectionStartMonth,
                 byMonth: psSpreadsheet.byMonth,
                 channels: psSpreadsheet.channels,
-                viewMode: pnlViewMode ? pnlViewMode.value : 'projected'
+                viewMode: pnlViewMode ? pnlViewMode.value : 'projected',
+                asOfMonth: asOfVal !== 'current' ? asOfVal : null
             };
             if (pnlViewToggle) pnlViewToggle.style.display = 'flex';
         } else {
@@ -1568,6 +1602,32 @@ const App = {
         const cfViewMode = document.getElementById('cfViewMode');
         if (cfViewMode) {
             cfViewMode.addEventListener('change', () => this.refreshCashFlow());
+        }
+
+        // Per-tab "As of" month pickers
+        const pnlAsOfMonth = document.getElementById('pnlAsOfMonth');
+        if (pnlAsOfMonth) {
+            pnlAsOfMonth.addEventListener('change', () => {
+                Database.setAsOfMonth('pnl', pnlAsOfMonth.value);
+                this.refreshPnL();
+            });
+        }
+        const cfAsOfMonth = document.getElementById('cfAsOfMonth');
+        if (cfAsOfMonth) {
+            cfAsOfMonth.addEventListener('change', () => {
+                Database.setAsOfMonth('cf', cfAsOfMonth.value);
+                this.refreshCashFlow();
+            });
+        }
+
+        // Reset Projections buttons
+        const pnlResetBtn = document.getElementById('pnlResetProjectionsBtn');
+        if (pnlResetBtn) {
+            pnlResetBtn.addEventListener('click', () => this.resetPnLProjections());
+        }
+        const cfResetBtn = document.getElementById('cfResetProjectionsBtn');
+        if (cfResetBtn) {
+            cfResetBtn.addEventListener('click', () => this.resetCashFlowProjections());
         }
 
         // ==================== MODALS & KEYBOARD ====================
@@ -4212,6 +4272,60 @@ const App = {
         }
     },
 
+    // ==================== PROJECTION HELPERS ====================
+
+    _populateAsOfSelect(selectEl, months, savedValue) {
+        if (!selectEl || !months || months.length === 0) return;
+        // Build continuous month range from first to last (fills gaps)
+        const first = months[0];
+        const last = months[months.length - 1];
+        const allMonths = [];
+        let [y, m] = first.split('-').map(Number);
+        const [endY, endM] = last.split('-').map(Number);
+        while (y < endY || (y === endY && m <= endM)) {
+            allMonths.push(y + '-' + String(m).padStart(2, '0'));
+            m++;
+            if (m > 12) { m = 1; y++; }
+        }
+        const currentVal = selectEl.value;
+        // Only rebuild if month count changed (avoid flicker)
+        if (selectEl.options.length === allMonths.length + 1) return;
+        selectEl.innerHTML = '<option value="current">Current</option>';
+        const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        allMonths.forEach(mo => {
+            const opt = document.createElement('option');
+            opt.value = mo;
+            const [yr, mn] = mo.split('-');
+            opt.textContent = monthNames[parseInt(mn) - 1] + ' ' + yr;
+            selectEl.appendChild(opt);
+        });
+        // Restore saved value from DB, or previous in-memory selection
+        const restoreVal = savedValue || currentVal;
+        if (restoreVal && [...selectEl.options].some(o => o.value === restoreVal)) {
+            selectEl.value = restoreVal;
+        }
+    },
+
+    resetPnLProjections() {
+        const psConfig = Database.getProjectedSalesConfig();
+        const pnlAsOfEl = document.getElementById('pnlAsOfMonth');
+        const asOfVal = pnlAsOfEl ? pnlAsOfEl.value : 'current';
+        const startMonth = asOfVal !== 'current' ? asOfVal : (psConfig.projectionStartMonth || Utils.getCurrentMonth());
+        Database.clearPLOverridesFrom(startMonth);
+        this.refreshPnL();
+        UI.showNotification('P&L projections reset from ' + startMonth, 'success');
+    },
+
+    resetCashFlowProjections() {
+        const psConfig = Database.getProjectedSalesConfig();
+        const cfAsOfEl = document.getElementById('cfAsOfMonth');
+        const asOfVal = cfAsOfEl ? cfAsOfEl.value : 'current';
+        const startMonth = asOfVal !== 'current' ? asOfVal : (psConfig.projectionStartMonth || Utils.getCurrentMonth());
+        Database.clearCashFlowOverridesFrom(startMonth);
+        this.refreshCashFlow();
+        UI.showNotification('Cash flow projections reset from ' + startMonth, 'success');
+    },
+
     // ==================== PROJECTED SALES ====================
 
     refreshProjectedSales() {
@@ -4244,6 +4358,10 @@ const App = {
             document.getElementById('psStartMonth').value = '';
             document.getElementById('psStartYear').value = '';
         }
+
+        // Sync sales tax rate
+        const taxRateEl = document.getElementById('psSalesTaxRate');
+        if (taxRateEl) taxRateEl.value = config.salesTaxRate || '';
 
         // Sync channel fields
         this._syncPsChannel('online', config.channels.online);
@@ -4287,6 +4405,7 @@ const App = {
         const config = {
             enabled: document.getElementById('psEnabled').checked,
             projectionStartMonth: (startM && startY) ? `${startY}-${startM}` : null,
+            salesTaxRate: parseFloat(document.getElementById('psSalesTaxRate').value) || 0,
             channels: {
                 online: {
                     enabled: document.getElementById('psOnlineEnabled').checked,

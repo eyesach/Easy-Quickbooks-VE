@@ -380,6 +380,11 @@
                             <option value="projected">Projected</option>
                             <option value="actual">Actual</option>
                         </select>
+                        <label class="ps-toggle-label">As of:</label>
+                        <select id="cfAsOfMonth" class="ps-toggle-select ps-asof-select">
+                            <option value="current">Current</option>
+                        </select>
+                        <button id="cfResetProjectionsBtn" class="btn btn-small ps-reset-btn">Reset Projections</button>
                     </div>
                 </div>
                 <div id="cashflowSpreadsheet" class="cashflow-spreadsheet-wrapper">
@@ -401,6 +406,11 @@
                                 <option value="projected">Projected</option>
                                 <option value="actual">Actual</option>
                             </select>
+                            <label class="ps-toggle-label">As of:</label>
+                            <select id="pnlAsOfMonth" class="ps-toggle-select ps-asof-select">
+                                <option value="current">Current</option>
+                            </select>
+                            <button id="pnlResetProjectionsBtn" class="btn btn-small ps-reset-btn">Reset Projections</button>
                         </div>
                         <label for="plTaxMode">Tax Mode:</label>
                         <select id="plTaxMode">
@@ -596,6 +606,14 @@
                         </div>
                         <div class="form-group">
                             <p class="field-hint" style="margin-top: 28px;">Each tab (P&amp;L, Cash Flow) has its own Projected/Actual toggle.</p>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="psSalesTaxRate">Sales Tax Rate (%)</label>
+                            <input type="number" id="psSalesTaxRate" step="0.01" min="0" max="100" placeholder="0.00">
+                            <p class="field-hint">Applied to total projected non-B2B revenue for cashflow.</p>
                         </div>
                     </div>
 

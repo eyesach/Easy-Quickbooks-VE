@@ -628,8 +628,15 @@ const UI = {
      */
     renderCashFlowSpreadsheet(spreadsheetData, cfOverrides, currentMonth, projectedSales) {
         const container = document.getElementById('cashflowSpreadsheet');
-        const { months, data } = spreadsheetData;
+        let { months, data } = spreadsheetData;
         cfOverrides = cfOverrides || {};
+
+        // Merge projected sales months into timeline (fills gaps like missing current month)
+        if (projectedSales && projectedSales.enabled && projectedSales.byMonth) {
+            const allMonths = new Set(months);
+            Object.keys(projectedSales.byMonth).forEach(m => allMonths.add(m));
+            months = Array.from(allMonths).sort();
+        }
 
         if (months.length === 0) {
             container.innerHTML = '<p class="empty-state">No completed transactions yet.</p>';
@@ -656,7 +663,8 @@ const UI = {
         // Helpers (defined before totals so projections are reflected in subtotals)
         const fmtMonth = (m) => Utils.formatMonthShort(m);
         const fmtAmt = (amt) => Utils.formatCurrency(amt);
-        const isFuture = (m) => currentMonth && m > currentMonth;
+        const effectiveCurrentMonth = (projectedSales && projectedSales.asOfMonth) || currentMonth;
+        const isFuture = (m) => effectiveCurrentMonth && m > effectiveCurrentMonth;
 
         const getCFVal = (catId, month, computed) => {
             const key = `${catId}-${month}`;
@@ -665,7 +673,7 @@ const UI = {
         const isCFOverridden = (catId, month) => `${catId}-${month}` in cfOverrides;
 
         const computeCFProjectedAvg = (catMonths) => {
-            if (!currentMonth) return 0;
+            if (!effectiveCurrentMonth) return 0;
             const pastValues = months.filter(m => !isFuture(m)).map(m => catMonths[m] || 0).filter(v => v > 0);
             return pastValues.length > 0 ? pastValues.reduce((a, b) => a + b, 0) / pastValues.length : 0;
         };
@@ -702,11 +710,11 @@ const UI = {
             });
         });
 
-        // Add projected sales revenue for projected months
+        // Add projected sales revenue + collected sales tax for projected months
         if (psActive) {
             months.forEach(m => {
                 if (useProjectedView(m) && projectedSales.byMonth[m]) {
-                    monthReceipts[m] += projectedSales.byMonth[m].revenue;
+                    monthReceipts[m] += projectedSales.byMonth[m].revenue + projectedSales.byMonth[m].salesTax;
                 }
             });
         }
@@ -717,11 +725,11 @@ const UI = {
             });
         });
 
-        // Add projected sales COGS for projected months (additive)
+        // Add projected sales COGS + sales tax remittance for projected months
         if (psActive) {
             months.forEach(m => {
                 if (useProjectedView(m) && projectedSales.byMonth[m]) {
-                    monthPayments[m] += projectedSales.byMonth[m].cogs;
+                    monthPayments[m] += projectedSales.byMonth[m].cogs + projectedSales.byMonth[m].salesTax;
                 }
             });
         }
@@ -752,25 +760,20 @@ const UI = {
         // CASH RECEIPTS section header
         html += '<tr class="cashflow-section-header"><td colspan="' + (months.length + 2) + '">Cash Receipts</td></tr>';
 
-        // Projected sales synthetic receivable rows
+        // Projected sales: single "Total Sales (Projected)" row = revenue + sales tax collected
         if (psActive) {
-            ['online', 'tradeshow'].forEach(key => {
-                const ch = projectedSales.channels && projectedSales.channels[key];
-                if (!ch || !ch.enabled) return;
-                const label = key === 'online' ? 'Online Revenue (Projected)' : 'Tradeshow Revenue (Projected)';
-                let rowTotal = 0;
-                html += `<tr class="ps-projected-row"><td class="cashflow-indent">${label}</td>`;
-                months.forEach(m => {
-                    if (useProjectedView(m)) {
-                        const val = (projectedSales.byMonth[m] && projectedSales.byMonth[m][key + 'Revenue']) || 0;
-                        rowTotal += val;
-                        html += `<td class="amount-receivable cashflow-projected">${val ? fmtAmt(val) : ''}</td>`;
-                    } else {
-                        html += '<td></td>';
-                    }
-                });
-                html += `<td class="amount-receivable">${fmtAmt(rowTotal)}</td></tr>`;
+            let rowTotal = 0;
+            html += `<tr class="ps-projected-row"><td class="cashflow-indent">Total Sales (Projected)</td>`;
+            months.forEach(m => {
+                if (useProjectedView(m) && projectedSales.byMonth[m]) {
+                    const val = projectedSales.byMonth[m].revenue + projectedSales.byMonth[m].salesTax;
+                    rowTotal += val;
+                    html += `<td class="amount-receivable cashflow-projected">${val ? fmtAmt(val) : ''}</td>`;
+                } else {
+                    html += '<td></td>';
+                }
             });
+            html += `<td class="amount-receivable">${fmtAmt(rowTotal)}</td></tr>`;
         }
 
         // Individual receivable category rows
@@ -837,6 +840,20 @@ const UI = {
                 });
                 html += `<td class="amount-payable">${fmtAmt(rowTotal)}</td></tr>`;
             });
+
+            // Sales Tax (Projected) payment row
+            let taxRowTotal = 0;
+            html += `<tr class="ps-projected-row"><td class="cashflow-indent">Sales Tax (Projected)</td>`;
+            months.forEach(m => {
+                if (useProjectedView(m) && projectedSales.byMonth[m]) {
+                    const val = projectedSales.byMonth[m].salesTax || 0;
+                    taxRowTotal += val;
+                    html += `<td class="amount-payable cashflow-projected">${val ? fmtAmt(val) : ''}</td>`;
+                } else {
+                    html += '<td></td>';
+                }
+            });
+            html += `<td class="amount-payable">${fmtAmt(taxRowTotal)}</td></tr>`;
         }
 
         // Individual payable category rows — all remain visible and editable
@@ -993,7 +1010,14 @@ const UI = {
      */
     renderProfitLossSpreadsheet(plData, overrides, taxMode, currentMonth, projectedSales) {
         const container = document.getElementById('pnlSpreadsheet');
-        const { months, revenue, cogs, opex, depreciation, assetDeprByMonth, loanInterestByMonth } = plData;
+        let { months, revenue, cogs, opex, depreciation, assetDeprByMonth, loanInterestByMonth } = plData;
+
+        // Merge projected sales months into timeline (fills gaps like missing current month)
+        if (projectedSales && projectedSales.enabled && projectedSales.byMonth) {
+            const allMonths = new Set(months);
+            Object.keys(projectedSales.byMonth).forEach(m => allMonths.add(m));
+            months = Array.from(allMonths).sort();
+        }
 
         if (months.length === 0) {
             container.innerHTML = '<p class="empty-state">No transactions with a month due yet.</p>';
@@ -1033,8 +1057,9 @@ const UI = {
         const cogsEntries = groupByCategory(cogs);
         const opexEntries = groupByCategory(opex);
 
-        // Helper: check if month is projected (future)
-        const isFuture = (m) => currentMonth && m > currentMonth;
+        // Helper: check if month is projected (future), respecting as-of override
+        const effectiveCurrentMonth = (projectedSales && projectedSales.asOfMonth) || currentMonth;
+        const isFuture = (m) => effectiveCurrentMonth && m > effectiveCurrentMonth;
 
         // Projected sales integration
         const psActive = projectedSales && projectedSales.enabled && projectedSales.projectionStartMonth;
@@ -1047,7 +1072,7 @@ const UI = {
 
         // Compute projected averages per category from past months
         const computeProjectedAvg = (catMonths) => {
-            if (!currentMonth) return 0;
+            if (!effectiveCurrentMonth) return 0;
             const pastValues = months.filter(m => !isFuture(m)).map(m => catMonths[m] || 0).filter(v => v > 0);
             return pastValues.length > 0 ? pastValues.reduce((a, b) => a + b, 0) / pastValues.length : 0;
         };
