@@ -718,28 +718,31 @@
                         <button type="button" id="beClearTimelineBtn" class="btn btn-small btn-secondary">Clear Timeline</button>
                     </fieldset>
                     <fieldset class="be-fieldset">
-                        <legend>Fixed Cost Sources</legend>
-                        <div class="be-toggle-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="beIncludeBudget" checked>
-                                <span>Monthly Budget Expenses</span>
-                                <span id="beBudgetHint" class="be-cost-hint"></span>
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="beIncludeDepreciation" checked>
-                                <span>Fixed Asset Depreciation</span>
-                                <span id="beDeprHint" class="be-cost-hint"></span>
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="beIncludeLoanInterest">
-                                <span>Loan Interest</span>
-                                <span id="beLoanHint" class="be-cost-hint"></span>
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="beIncludeAssetCosts">
-                                <span>Asset Purchase Costs</span>
-                                <span id="beAssetCostHint" class="be-cost-hint"></span>
-                            </label>
+                        <legend>Cost Data Source</legend>
+                        <p class="field-hint">Fixed costs are pulled from your P&amp;L (OpEx + Depreciation + Loan Interest).</p>
+                        <div class="form-row">
+                            <div class="form-group" style="max-width:240px;">
+                                <label for="beDataSource">Values</label>
+                                <select id="beDataSource">
+                                    <option value="actual">Actual (historical averages)</option>
+                                    <option value="projected">Projected (forward-looking)</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="beAsOfGroup" style="max-width:200px; display:none;">
+                                <label for="beAsOfMonth">As of</label>
+                                <select id="beAsOfMonth">
+                                    <option value="current">Current</option>
+                                </select>
+                                <p class="field-hint">Months after this are projected.</p>
+                            </div>
+                        </div>
+                        <span id="bePLCostHint" class="be-cost-hint"></span>
+                        <div class="form-row" style="margin-top:8px;">
+                            <div class="form-group" style="max-width:240px;">
+                                <label for="beFixedCostOverride">Monthly Fixed Cost Override ($)</label>
+                                <input type="number" id="beFixedCostOverride" step="0.01" min="0" placeholder="Leave blank to use P&L">
+                                <p class="field-hint">Overrides the P&L-derived value when set.</p>
+                            </div>
                         </div>
                     </fieldset>
                     <fieldset class="be-fieldset">

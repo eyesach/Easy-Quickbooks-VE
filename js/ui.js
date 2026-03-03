@@ -1383,6 +1383,10 @@ const UI = {
 
         html += '</tbody></table>';
         container.innerHTML = html;
+
+        // Expose computed per-month operating expenses for break-even to use
+        this._pnlMonthOpex = monthOpex;
+        this._pnlMonths = months;
     },
 
     /**
@@ -2206,14 +2210,13 @@ const UI = {
             return;
         }
 
-        // Build fixed cost breakdown lines
+        // Build fixed cost breakdown lines (from P&L)
         let breakdownHtml = '';
         if (fixedBreakdown) {
             const lines = [];
-            if (fixedBreakdown.budget > 0) lines.push(`Expenses: ${Utils.formatCurrency(fixedBreakdown.budget)}`);
+            if (fixedBreakdown.opex > 0) lines.push(`OpEx: ${Utils.formatCurrency(fixedBreakdown.opex)}`);
             if (fixedBreakdown.depreciation > 0) lines.push(`Depreciation: ${Utils.formatCurrency(fixedBreakdown.depreciation)}`);
             if (fixedBreakdown.loanInterest > 0) lines.push(`Loan Interest: ${Utils.formatCurrency(fixedBreakdown.loanInterest)}`);
-            if (fixedBreakdown.assetCosts > 0) lines.push(`Asset Costs: ${Utils.formatCurrency(fixedBreakdown.assetCosts)}`);
             if (lines.length > 0) {
                 breakdownHtml = `<span class="be-card-breakdown">${lines.join('<br>')}</span>`;
             }

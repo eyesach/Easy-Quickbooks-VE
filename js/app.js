@@ -110,11 +110,8 @@ const App = {
         if (cashflowTab && cashflowTab.style.display !== 'none') {
             this.refreshCashFlow();
         }
-        // Refresh P&L tab if it's currently visible
-        const pnlTab = document.getElementById('pnlTab');
-        if (pnlTab && pnlTab.style.display !== 'none') {
-            this.refreshPnL();
-        }
+        // Always refresh P&L (break-even depends on its computed values)
+        this.refreshPnL();
         // Refresh Balance Sheet tab if visible
         const bsTab = document.getElementById('balancesheetTab');
         if (bsTab && bsTab.style.display !== 'none') {
@@ -1558,6 +1555,17 @@ const App = {
         ['beB2bRate', 'beB2bCogs'].forEach(id => {
             document.getElementById(id).addEventListener('input', () => this._updateBeCmPreview('b2b'));
         });
+
+        // Data source toggle updates cost hint and as-of visibility in real-time
+        document.getElementById('beDataSource').addEventListener('change', () => {
+            const isProjected = document.getElementById('beDataSource').value === 'projected';
+            document.getElementById('beAsOfGroup').style.display = isProjected ? '' : 'none';
+            this._updateBeFixedCostHints();
+        });
+        // As-of month change updates cost hint in real-time
+        document.getElementById('beAsOfMonth').addEventListener('change', () => this._updateBeFixedCostHints());
+        // Fixed cost override updates hint in real-time
+        document.getElementById('beFixedCostOverride').addEventListener('input', () => this._updateBeFixedCostHints());
 
         // Progress tracker month dropdown
         document.getElementById('beProgressMonth').addEventListener('change', () => {
@@ -3502,6 +3510,10 @@ const App = {
     refreshBreakeven() {
         const cfg = Database.getBreakevenConfig();
         const timeline = this.getBreakevenTimeline(cfg);
+        const realCurrentMonth = Utils.getCurrentMonth();
+        const useProjected = cfg.dataSource === 'projected';
+        // When projected mode has an as-of month, use it as the cutoff for actual vs projected
+        const currentMonth = (useProjected && cfg.asOfMonth) ? cfg.asOfMonth : realCurrentMonth;
 
         // Timeline banner
         const banner = document.getElementById('beTimelineBanner');
@@ -3509,7 +3521,8 @@ const App = {
             const startLabel = timeline.start ? Utils.formatMonthShort(timeline.start) : 'Start';
             const endLabel = timeline.end ? Utils.formatMonthShort(timeline.end) : 'Present';
             const isLocal = (cfg.timeline && (cfg.timeline.start || cfg.timeline.end));
-            banner.textContent = `Timeline: ${startLabel} \u2013 ${endLabel}${isLocal ? ' (local override)' : ''}`;
+            const asOfLabel = (useProjected && cfg.asOfMonth) ? ` as of ${Utils.formatMonthShort(cfg.asOfMonth)}` : '';
+            banner.textContent = `Timeline: ${startLabel} \u2013 ${endLabel}${isLocal ? ' (local override)' : ''} \u2022 ${useProjected ? 'Projected' : 'Actual'}${asOfLabel}`;
             banner.style.display = 'block';
         } else {
             banner.style.display = 'none';
@@ -3520,37 +3533,38 @@ const App = {
         if (timeline.start && timeline.end) {
             months = Utils.generateMonthRange(timeline.start, timeline.end);
         } else {
-            // Fallback: use current month only
-            months = [Utils.getCurrentMonth()];
+            months = [currentMonth];
         }
 
-        // Gather asset depreciation and loan interest by month
-        const assetDeprByMonth = Database.getAssetDepreciationByMonth(null);
-        const loanInterestByMonth = Database.getLoanInterestByMonth(null);
+        // Ensure P&L has been rendered so UI._pnlMonthOpex is available
+        if (!UI._pnlMonthOpex) {
+            this.refreshPnL();
+        }
+        const totalOpexByMonth = UI._pnlMonthOpex || {};
 
-        // Compute average monthly fixed costs across the timeline (per-source breakdown)
-        let totalBudget = 0, totalDepr = 0, totalLoan = 0;
-        months.forEach(m => {
-            if (cfg.includeBudgetExpenses) totalBudget += Database.getBudgetFixedCostsForMonth(m);
-            if (cfg.includeAssetDepreciation) totalDepr += (assetDeprByMonth[m] || 0);
-            if (cfg.includeLoanInterest) totalLoan += (loanInterestByMonth[m] || 0);
-        });
-        const totalAssetCost = cfg.includeAssetCosts ? Database.getTotalAssetPurchaseCost() : 0;
-        const n = months.length || 1;
-        const assetCostPerMonth = totalAssetCost / n;
-        const avgMonthlyFixed = (totalBudget + totalDepr + totalLoan) / n + assetCostPerMonth;
-        const fixedBreakdown = {
-            budget: totalBudget / n,
-            depreciation: totalDepr / n,
-            loanInterest: totalLoan / n,
-            assetCosts: assetCostPerMonth,
-        };
+        // Determine monthly fixed costs
+        let avgMonthlyFixed;
+        if (cfg.fixedCostOverride != null && cfg.fixedCostOverride > 0) {
+            // Manual override takes priority
+            avgMonthlyFixed = cfg.fixedCostOverride;
+        } else {
+            const actualMonths = months.filter(m => m <= currentMonth);
+            const na = actualMonths.length || 1;
+
+            if (useProjected) {
+                const pastValues = actualMonths.map(m => totalOpexByMonth[m] || 0).filter(v => v > 0);
+                avgMonthlyFixed = pastValues.length > 0 ? pastValues.reduce((a, b) => a + b, 0) / pastValues.length : 0;
+            } else {
+                const sum = actualMonths.reduce((acc, m) => acc + (totalOpexByMonth[m] || 0), 0);
+                avgMonthlyFixed = sum / na;
+            }
+        }
 
         // Core break-even calculation
         const beResult = Utils.computeBreakEven(cfg, avgMonthlyFixed);
 
         // Render summary and channel breakdown
-        UI.renderBreakevenSummaryCards(beResult, fixedBreakdown, cfg);
+        UI.renderBreakevenSummaryCards(beResult, null, cfg);
         UI.renderBreakevenChannelBreakdown(beResult, cfg);
 
         // Chart data points
@@ -3564,9 +3578,10 @@ const App = {
             const b2bTotal = b2bMonthly * monthCount;
 
             const points = Utils.computeBreakEvenChartPoints(
-                cfg, avgMonthlyFixed, beResult.consumerUnitsNeeded || 0, increment, monthCount
+                cfg, avgMonthlyFixed, beResult.consumerUnitsNeededExact || 0, increment, monthCount
             );
-            const consumerBETotal = Math.ceil((beResult.consumerUnitsNeeded || 0) * monthCount);
+            // Use exact (non-ceiled) monthly value to avoid double-rounding
+            const consumerBETotal = Math.ceil((beResult.consumerUnitsNeededExact || 0) * monthCount);
 
             // Compute exact break-even point for the table (not injected into chart)
             const consumer = cfg.consumer || {};
@@ -3592,9 +3607,15 @@ const App = {
             // Timeline chart
             let timelinePoints = null;
             if (months.length > 1) {
+                const hasOverride = cfg.fixedCostOverride != null && cfg.fixedCostOverride > 0;
+                const projAvgFixed = avgMonthlyFixed;
                 timelinePoints = Utils.computeBreakevenTimeline(
-                    cfg, months, assetDeprByMonth, loanInterestByMonth,
-                    (m) => Database.getBudgetFixedCostsForMonth(m)
+                    cfg, months, {}, {},
+                    hasOverride
+                        ? () => projAvgFixed
+                        : (useProjected
+                            ? () => projAvgFixed
+                            : (m) => totalOpexByMonth[m] || 0)
                 );
                 const actualRevenueByMonth = Database.getActualRevenueByMonth();
                 this._renderBeTimelineChart(timelinePoints, actualRevenueByMonth);
@@ -4079,11 +4100,20 @@ const App = {
             document.getElementById('beTimelineEndYear').value = '';
         }
 
-        // Fixed cost toggles
-        document.getElementById('beIncludeBudget').checked = cfg.includeBudgetExpenses !== false;
-        document.getElementById('beIncludeDepreciation').checked = cfg.includeAssetDepreciation !== false;
-        document.getElementById('beIncludeLoanInterest').checked = cfg.includeLoanInterest === true;
-        document.getElementById('beIncludeAssetCosts').checked = cfg.includeAssetCosts === true;
+        // Data source toggle
+        document.getElementById('beDataSource').value = cfg.dataSource || 'actual';
+
+        // As-of month picker: populate and show/hide based on data source
+        const isProjected = (cfg.dataSource || 'actual') === 'projected';
+        document.getElementById('beAsOfGroup').style.display = isProjected ? '' : 'none';
+        const beAsOfEl = document.getElementById('beAsOfMonth');
+        if (beAsOfEl) {
+            const beTl = this.getBreakevenTimeline(cfg);
+            const tlMonths = (beTl.start && beTl.end)
+                ? Utils.generateMonthRange(beTl.start, beTl.end)
+                : [Utils.getCurrentMonth()];
+            this._populateAsOfSelect(beAsOfEl, tlMonths, cfg.asOfMonth || 'current');
+        }
 
         // Consumer channel
         const consumer = cfg.consumer || {};
@@ -4102,6 +4132,9 @@ const App = {
 
         // Unit increment
         document.getElementById('beUnitIncrement').value = cfg.unitIncrement || 100;
+
+        // Fixed cost override
+        document.getElementById('beFixedCostOverride').value = cfg.fixedCostOverride || '';
 
         // Update CM previews and cost hints
         this._updateBeCmPreview('consumer');
@@ -4134,42 +4167,45 @@ const App = {
     _updateBeFixedCostHints() {
         const cfg = Database.getBreakevenConfig();
         const timeline = this.getBreakevenTimeline(cfg);
+        const realCurrentMonth = Utils.getCurrentMonth();
+        const useProjected = (document.getElementById('beDataSource').value || cfg.dataSource) === 'projected';
+        // Use as-of month from the modal picker (may not be saved yet)
+        const beAsOfVal = document.getElementById('beAsOfMonth').value;
+        const currentMonth = (useProjected && beAsOfVal && beAsOfVal !== 'current') ? beAsOfVal : realCurrentMonth;
 
         let months = [];
         if (timeline.start && timeline.end) {
             months = Utils.generateMonthRange(timeline.start, timeline.end);
         } else {
-            months = [Utils.getCurrentMonth()];
+            months = [currentMonth];
         }
 
-        // Budget expenses: average across timeline (respects per-expense start/end dates)
-        let budgetTotal = 0;
-        months.forEach(m => { budgetTotal += Database.getBudgetFixedCostsForMonth(m); });
-        const budgetAvg = months.length > 0 ? budgetTotal / months.length : 0;
-        document.getElementById('beBudgetHint').textContent = budgetAvg > 0
-            ? `(${Utils.formatCurrency(budgetAvg)}/mo avg)` : '';
+        // Check manual override first
+        const overrideVal = parseFloat(document.getElementById('beFixedCostOverride').value);
+        const hint = document.getElementById('bePLCostHint');
 
-        // Asset depreciation: average across timeline
-        const deprByMonth = Database.getAssetDepreciationByMonth(null);
-        let deprTotal = 0;
-        months.forEach(m => { deprTotal += (deprByMonth[m] || 0); });
-        const deprAvg = months.length > 0 ? deprTotal / months.length : 0;
-        document.getElementById('beDeprHint').textContent = deprAvg > 0
-            ? `(${Utils.formatCurrency(deprAvg)}/mo avg)` : '';
+        if (!isNaN(overrideVal) && overrideVal > 0) {
+            if (hint) hint.textContent = `Monthly fixed costs: ${Utils.formatCurrency(overrideVal)}/mo (manual override)`;
+            return;
+        }
 
-        // Loan interest: average across timeline
-        const loanByMonth = Database.getLoanInterestByMonth(null);
-        let loanTotal = 0;
-        months.forEach(m => { loanTotal += (loanByMonth[m] || 0); });
-        const loanAvg = months.length > 0 ? loanTotal / months.length : 0;
-        document.getElementById('beLoanHint').textContent = loanAvg > 0
-            ? `(${Utils.formatCurrency(loanAvg)}/mo avg)` : '';
+        // Fall back to P&L renderer's computed per-month operating expenses
+        const totalOpexByMonth = UI._pnlMonthOpex || {};
 
-        // Asset purchase costs: total amortized across timeline
-        const totalAssetCost = Database.getTotalAssetPurchaseCost();
-        const assetCostAvg = months.length > 0 ? totalAssetCost / months.length : 0;
-        document.getElementById('beAssetCostHint').textContent = assetCostAvg > 0
-            ? `(${Utils.formatCurrency(assetCostAvg)}/mo avg)` : '';
+        const actualMonths = months.filter(m => m <= currentMonth);
+        let totalFixed = 0;
+
+        if (useProjected) {
+            const values = actualMonths.map(m => totalOpexByMonth[m] || 0).filter(v => v > 0);
+            totalFixed = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+        } else {
+            const sum = actualMonths.reduce((acc, m) => acc + (totalOpexByMonth[m] || 0), 0);
+            totalFixed = sum / (actualMonths.length || 1);
+        }
+
+        if (hint) hint.textContent = totalFixed > 0
+            ? `Avg. monthly fixed costs: ${Utils.formatCurrency(totalFixed)}/mo (${useProjected ? 'projected' : 'actual'}, from P&L)`
+            : '';
     },
 
     /**
@@ -4187,12 +4223,13 @@ const App = {
             end: (endM && endY) ? `${endY}-${endM}` : null
         };
 
+        const beAsOfVal = document.getElementById('beAsOfMonth').value;
+        const fixedOverrideVal = parseFloat(document.getElementById('beFixedCostOverride').value);
         const cfg = {
             timeline,
-            includeBudgetExpenses: document.getElementById('beIncludeBudget').checked,
-            includeAssetDepreciation: document.getElementById('beIncludeDepreciation').checked,
-            includeLoanInterest: document.getElementById('beIncludeLoanInterest').checked,
-            includeAssetCosts: document.getElementById('beIncludeAssetCosts').checked,
+            dataSource: document.getElementById('beDataSource').value || 'actual',
+            asOfMonth: (beAsOfVal && beAsOfVal !== 'current') ? beAsOfVal : null,
+            fixedCostOverride: (!isNaN(fixedOverrideVal) && fixedOverrideVal > 0) ? fixedOverrideVal : null,
             consumer: {
                 enabled: document.getElementById('beConsumerEnabled').checked,
                 avgPrice: parseFloat(document.getElementById('beConsumerPrice').value) || 0,

@@ -715,7 +715,8 @@ const Utils = {
 
         // Consumer units needed to cover remaining fixed costs
         if (consumer.enabled && result.consumerCM > 0) {
-            result.consumerUnitsNeeded = Math.ceil(remainingFixed / result.consumerCM);
+            result.consumerUnitsNeededExact = remainingFixed / result.consumerCM;
+            result.consumerUnitsNeeded = Math.ceil(result.consumerUnitsNeededExact);
             result.breakEvenUnits = result.consumerUnitsNeeded + (b2b.enabled ? (b2b.monthlyUnits || 0) : 0);
             result.breakEvenRevenue = (result.consumerUnitsNeeded * consumer.avgPrice) + result.b2bMonthlyRevenue;
             result.isValid = true;
@@ -792,16 +793,13 @@ const Utils = {
      * @param {Function} getBudgetForMonth - (month) => budgetFixedCosts
      * @returns {Array} Array of {month, revenue, fixedCosts, variableCosts, totalCosts, profit, breakEvenUnits}
      */
-    computeBreakevenTimeline(cfg, months, assetDeprByMonth, loanInterestByMonth, getBudgetForMonth) {
+    computeBreakevenTimeline(cfg, months, assetDeprByMonth, loanInterestByMonth, getFixedCostsForMonth) {
         const consumer = cfg.consumer || {};
         const b2b = cfg.b2b || {};
         const results = [];
 
         months.forEach(month => {
-            let fixedCosts = 0;
-            if (cfg.includeBudgetExpenses) fixedCosts += getBudgetForMonth(month);
-            if (cfg.includeAssetDepreciation) fixedCosts += (assetDeprByMonth[month] || 0);
-            if (cfg.includeLoanInterest) fixedCosts += (loanInterestByMonth[month] || 0);
+            const fixedCosts = getFixedCostsForMonth(month);
 
             // Monthly revenue and variable costs from both channels
             const b2bUnits = (b2b.enabled && b2b.monthlyUnits > 0) ? b2b.monthlyUnits : 0;

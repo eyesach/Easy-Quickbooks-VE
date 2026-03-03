@@ -1258,6 +1258,56 @@ const Database = {
     },
 
     /**
+     * Compute total operating expenses per month, matching P&L renderer exactly.
+     * Sums: opex categories (with overrides), depreciation categories (from overrides),
+     * asset depreciation, and loan interest.
+     * @param {string[]} months - Array of month strings (YYYY-MM)
+     * @returns {{ [month: string]: number }} Per-month total operating expenses
+     */
+    getMonthlyTotalOpex(months) {
+        const plData = this.getPLSpreadsheet();
+        const overrides = this.getAllPLOverrides();
+        const result = {};
+        months.forEach(m => { result[m] = 0; });
+
+        // Group opex by category → { catId: { months: { m: total } } }
+        const opexByCat = {};
+        (plData.opex || []).forEach(row => {
+            if (!opexByCat[row.category_id]) opexByCat[row.category_id] = {};
+            opexByCat[row.category_id][row.month] = (opexByCat[row.category_id][row.month] || 0) + row.total;
+        });
+
+        // Opex categories (with overrides)
+        Object.entries(opexByCat).forEach(([catId, catMonths]) => {
+            months.forEach(m => {
+                const key = `${catId}-${m}`;
+                const computed = catMonths[m] || 0;
+                const val = (key in overrides) ? overrides[key] : computed;
+                result[m] += val;
+            });
+        });
+
+        // Depreciation categories (values from pl_overrides only)
+        (plData.depreciation || []).forEach(cat => {
+            months.forEach(m => {
+                const key = `${cat.category_id}-${m}`;
+                const val = (key in overrides) ? overrides[key] : 0;
+                result[m] += val;
+            });
+        });
+
+        // Asset depreciation
+        const assetDepr = plData.assetDeprByMonth || {};
+        months.forEach(m => { result[m] += (assetDepr[m] || 0); });
+
+        // Loan interest
+        const loanInt = plData.loanInterestByMonth || {};
+        months.forEach(m => { result[m] += (loanInt[m] || 0); });
+
+        return result;
+    },
+
+    /**
      * Get P&L tax mode setting
      * @returns {string} 'corporate' or 'passthrough'
      */
@@ -1743,10 +1793,9 @@ const Database = {
     _defaultBreakevenConfig() {
         return {
             timeline: { start: null, end: null },
-            includeBudgetExpenses: true,
-            includeAssetDepreciation: true,
-            includeLoanInterest: false,
-            includeAssetCosts: false,
+            dataSource: 'actual',
+            asOfMonth: null,
+            fixedCostOverride: null,
             consumer: { enabled: true, avgPrice: 0, avgCogs: 0 },
             b2b: { enabled: false, monthlyUnits: 0, ratePerUnit: 0, cogsPerUnit: 0 },
             unitIncrement: 100
