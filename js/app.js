@@ -1316,9 +1316,15 @@ const App = {
         // Initialize BS date dropdowns
         this.initBalanceSheetDate();
 
-        // BS month/year change
-        document.getElementById('bsMonthMonth').addEventListener('change', () => this.refreshBalanceSheet());
-        document.getElementById('bsMonthYear').addEventListener('change', () => this.refreshBalanceSheet());
+        // BS month/year change — persist selection
+        document.getElementById('bsMonthMonth').addEventListener('change', () => {
+            this._saveBsMonth();
+            this.refreshBalanceSheet();
+        });
+        document.getElementById('bsMonthYear').addEventListener('change', () => {
+            this._saveBsMonth();
+            this.refreshBalanceSheet();
+        });
 
         // Fixed asset form
         document.getElementById('fixedAssetForm').addEventListener('submit', (e) => {
@@ -2684,11 +2690,13 @@ const App = {
     },
 
     /**
-     * Initialize Balance Sheet month/year dropdowns with current month
+     * Initialize Balance Sheet month/year dropdowns, restoring saved selection
      */
     initBalanceSheetDate() {
-        const currentMonth = Utils.getCurrentMonth();
-        const [year, month] = currentMonth.split('-');
+        const saved = Database.getAsOfMonth('bs');
+        const fallback = Utils.getCurrentMonth();
+        const target = (saved && saved !== 'current') ? saved : fallback;
+        const [year, month] = target.split('-');
         document.getElementById('bsMonthMonth').value = month;
 
         // Populate year dropdown (timeline-aware)
@@ -2703,6 +2711,17 @@ const App = {
             yearSelect.appendChild(opt);
         });
         yearSelect.value = year;
+    },
+
+    /**
+     * Persist the current Balance Sheet month/year selection
+     */
+    _saveBsMonth() {
+        const month = document.getElementById('bsMonthMonth').value;
+        const year = document.getElementById('bsMonthYear').value;
+        if (month && year) {
+            Database.setAsOfMonth('bs', `${year}-${month}`);
+        }
     },
 
     // ==================== FIXED ASSETS & LOANS ====================
