@@ -80,6 +80,9 @@ const App = {
             // Load and apply timeline
             this.loadAndApplyTimeline();
 
+            // Restore balance sheet date before refreshAll (needs timeline years populated first)
+            this.initBalanceSheetDate();
+
             // Load and render data
             this.refreshAll();
 
@@ -1312,9 +1315,6 @@ const App = {
         });
 
         // ==================== BALANCE SHEET ====================
-
-        // Initialize BS date dropdowns
-        this.initBalanceSheetDate();
 
         // BS month/year change — persist selection
         document.getElementById('bsMonthMonth').addEventListener('change', () => {
