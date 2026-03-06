@@ -2584,6 +2584,8 @@ const App = {
         if (!month || !year) {
             document.getElementById('balanceSheetContent').innerHTML =
                 '<p class="empty-state">Select a date to view the Balance Sheet.</p>';
+            const ratiosEl = document.getElementById('bsRatiosContent');
+            if (ratiosEl) ratiosEl.innerHTML = '';
             return;
         }
 
@@ -2674,6 +2676,9 @@ const App = {
         const arByCategory = Database.getARByCategory(asOfMonth);
         const apByCategory = Database.getAPByCategory(asOfMonth);
 
+        // P&L totals through as-of month (for financial ratios)
+        const plTotals = Database.getPLTotalsThrough(asOfMonth, taxMode);
+
         const bsData = {
             asOfMonth,
             cash, ar, arByCategory,
@@ -2683,7 +2688,8 @@ const App = {
             loanDetails, totalLoanBalance,
             totalLiabilities,
             commonStock, apic: apicVal, retainedEarnings, totalEquity,
-            totalLiabilitiesAndEquity, isBalanced
+            totalLiabilitiesAndEquity, isBalanced,
+            plTotals
         };
 
         UI.renderBalanceSheet(bsData);

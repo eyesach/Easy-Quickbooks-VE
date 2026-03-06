@@ -2368,6 +2368,148 @@ const Database = {
     },
 
     /**
+     * Get cumulative P&L totals for all months through asOfMonth.
+     * Mirrors getRetainedEarningsAsOf logic but returns full breakdown for financial ratios.
+     */
+    getPLTotalsThrough(asOfMonth, taxMode) {
+        const round2 = (v) => Math.round(v * 100) / 100;
+        const monthsResult = this.db.exec(`
+            SELECT DISTINCT t.month_due as month FROM transactions t
+            WHERE t.month_due IS NOT NULL AND t.month_due <= ?
+            ORDER BY month ASC
+        `, [asOfMonth]);
+        const txMonths = monthsResult.length > 0 ? monthsResult[0].values.map(r => r[0]) : [];
+
+        const assetDeprByMonth = this.getAssetDepreciationByMonth(asOfMonth);
+        const loanInterestByMonth = this.getLoanInterestByMonth(asOfMonth);
+
+        const allMonths = new Set(txMonths);
+        Object.keys(assetDeprByMonth).forEach(m => allMonths.add(m));
+        Object.keys(loanInterestByMonth).forEach(m => allMonths.add(m));
+        const months = Array.from(allMonths).sort();
+
+        const zero = { totalRevenue: 0, totalCogs: 0, totalGP: 0, totalNIBT: 0, totalTax: 0, totalNIAT: 0, totalLoanInterest: 0 };
+        if (months.length === 0) return zero;
+
+        const overrides = this.getAllPLOverrides();
+        const getVal = (catId, month, computed) => {
+            const key = `${catId}-${month}`;
+            return (key in overrides) ? overrides[key] : computed;
+        };
+
+        const revenueResult = this.db.exec(`
+            SELECT c.id as category_id, t.month_due as month,
+                   SUM(COALESCE(t.pretax_amount, t.amount)) as total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE t.month_due IS NOT NULL AND t.month_due <= ?
+            AND t.transaction_type = 'receivable'
+            AND c.is_cogs = 0 AND c.show_on_pl != 1
+            GROUP BY c.id, t.month_due
+        `, [asOfMonth]);
+        const revenue = revenueResult.length > 0 ? this.rowsToObjects(revenueResult[0]) : [];
+
+        const cogsResult = this.db.exec(`
+            SELECT c.id as category_id, t.month_due as month, SUM(t.amount) as total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE t.month_due IS NOT NULL AND t.month_due <= ?
+            AND c.is_cogs = 1 AND c.show_on_pl != 1
+            GROUP BY c.id, t.month_due
+        `, [asOfMonth]);
+        const cogs = cogsResult.length > 0 ? this.rowsToObjects(cogsResult[0]) : [];
+
+        const opexResult = this.db.exec(`
+            SELECT c.id as category_id, t.month_due as month, SUM(t.amount) as total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE t.month_due IS NOT NULL AND t.month_due <= ?
+            AND t.transaction_type = 'payable'
+            AND c.is_cogs = 0 AND c.is_depreciation = 0 AND c.is_sales_tax = 0 AND c.show_on_pl != 1
+            GROUP BY c.id, t.month_due
+        `, [asOfMonth]);
+        const opex = opexResult.length > 0 ? this.rowsToObjects(opexResult[0]) : [];
+
+        const deprResult = this.db.exec(`SELECT id as category_id FROM categories WHERE is_depreciation = 1`);
+        const deprCats = deprResult.length > 0 ? deprResult[0].values.map(r => r[0]) : [];
+
+        const buildMap = (rows) => {
+            const map = {};
+            rows.forEach(r => {
+                const key = `${r.category_id}-${r.month}`;
+                map[key] = (map[key] || 0) + r.total;
+            });
+            return map;
+        };
+
+        const revMap = buildMap(revenue);
+        const cogsMap = buildMap(cogs);
+        const opexMap = buildMap(opex);
+
+        const revCatIds = [...new Set(revenue.map(r => r.category_id))];
+        const cogsCatIds = [...new Set(cogs.map(r => r.category_id))];
+        const opexCatIds = [...new Set(opex.map(r => r.category_id))];
+
+        Object.keys(overrides).forEach(key => {
+            const [catIdStr] = key.split('-');
+            const catId = parseInt(catIdStr);
+            if (catId < 0) return;
+            if (!revCatIds.includes(catId) && !cogsCatIds.includes(catId) &&
+                !opexCatIds.includes(catId) && !deprCats.includes(catId)) {
+                const catResult = this.db.exec(`
+                    SELECT id FROM categories
+                    WHERE id = ? AND is_cogs = 0 AND is_depreciation = 0 AND is_sales_tax = 0 AND show_on_pl != 1
+                `, [catId]);
+                if (catResult.length > 0 && catResult[0].values.length > 0) {
+                    opexCatIds.push(catId);
+                }
+            }
+        });
+
+        let totalRevenue = 0, totalCogs = 0, totalNIBT = 0, totalTax = 0, totalNIAT = 0, totalLoanInterest = 0;
+
+        months.forEach(month => {
+            let monthRev = 0;
+            revCatIds.forEach(catId => {
+                monthRev += getVal(catId, month, revMap[`${catId}-${month}`] || 0);
+            });
+
+            let monthCogs = 0;
+            cogsCatIds.forEach(catId => {
+                monthCogs += getVal(catId, month, cogsMap[`${catId}-${month}`] || 0);
+            });
+
+            let monthOpex = 0;
+            opexCatIds.forEach(catId => {
+                monthOpex += getVal(catId, month, opexMap[`${catId}-${month}`] || 0);
+            });
+            deprCats.forEach(catId => {
+                monthOpex += getVal(catId, month, 0);
+            });
+            if (assetDeprByMonth[month]) monthOpex += assetDeprByMonth[month];
+            if (loanInterestByMonth[month]) {
+                monthOpex += loanInterestByMonth[month];
+                totalLoanInterest = round2(totalLoanInterest + loanInterestByMonth[month]);
+            }
+
+            const nibt = round2(monthRev - monthCogs - monthOpex);
+            let tax = 0;
+            if (taxMode === 'corporate') {
+                const autoTax = round2(nibt > 0 ? nibt * 0.21 : 0);
+                tax = getVal(-1, month, autoTax);
+            }
+
+            totalRevenue = round2(totalRevenue + monthRev);
+            totalCogs = round2(totalCogs + monthCogs);
+            totalNIBT = round2(totalNIBT + nibt);
+            totalTax = round2(totalTax + tax);
+            totalNIAT = round2(totalNIAT + nibt - tax);
+        });
+
+        return { totalRevenue, totalCogs, totalGP: round2(totalRevenue - totalCogs), totalNIBT, totalTax, totalNIAT, totalLoanInterest };
+    },
+
+    /**
      * Get all P&L overrides
      * @returns {Object} Map of "categoryId-month" => override_amount
      */

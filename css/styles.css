@@ -2830,6 +2830,118 @@ body {
     padding: 2px;
 }
 
+/* ── Balance Sheet: Financial Ratios Summary ─────────────────────────────── */
+
+.bs-ratios-section {
+    background: var(--color-white);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    margin-top: var(--spacing-section-gap);
+}
+
+.bs-ratios-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.bs-ratios-header h3 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.bs-ratios-period {
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+}
+
+.bs-ratios-body {
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.bs-ratios-group-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-text-muted);
+    margin-bottom: 10px;
+}
+
+.bs-ratios-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+}
+
+.bs-ratio-card {
+    background: var(--color-bg);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.bs-ratio-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-text);
+    line-height: 1.2;
+}
+
+.bs-ratio-value {
+    font-size: 1.2rem;
+    font-weight: 700;
+    font-family: 'DM Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text);
+    line-height: 1.2;
+}
+
+.bs-ratio-value.ratio-positive {
+    color: var(--color-receivable);
+}
+
+.bs-ratio-value.ratio-negative {
+    color: var(--color-payable);
+}
+
+.bs-ratio-formula {
+    font-size: 0.68rem;
+    color: var(--color-text-muted);
+    line-height: 1.3;
+}
+
+.ratio-na {
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: var(--color-text-muted);
+    font-family: inherit;
+}
+
+@media (max-width: 900px) {
+    .bs-ratios-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .bs-ratios-grid {
+        grid-template-columns: 1fr;
+    }
+    .bs-ratios-body {
+        padding: 12px;
+    }
+}
+
 /* Loan Amortization Styles */
 .loan-section {
     background: var(--color-white);

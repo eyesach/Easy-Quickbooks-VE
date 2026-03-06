@@ -1495,6 +1495,141 @@ const UI = {
         }
 
         container.innerHTML = html;
+        this.renderFinancialRatios(data, document.getElementById('bsRatiosContent'));
+    },
+
+    /**
+     * Render the Financial Ratios summary section below the Balance Sheet.
+     */
+    renderFinancialRatios(data, container) {
+        if (!container || !data.asOfMonth) return;
+
+        const pl = data.plTotals || {};
+        const totalRevenue = pl.totalRevenue || 0;
+        const totalNIAT = pl.totalNIAT || 0;
+        const totalNIBT = pl.totalNIBT || 0;
+        const totalLoanInterest = pl.totalLoanInterest || 0;
+        const totalGP = pl.totalGP || 0;
+
+        const totalEquity = data.totalEquity || 0;
+        const totalAssets = data.totalAssets || 0;
+        const totalLiabilities = data.totalLiabilities || 0;
+        const currentAssets = (data.cash || 0) + (data.ar || 0);
+        const currentLiabilities = (data.ap || 0) + (data.salesTaxPayable || 0);
+
+        const fmtPct = (num, den) => {
+            if (!den || den === 0) return '<span class="ratio-na">N/A</span>';
+            return ((num / den) * 100).toFixed(1) + '%';
+        };
+        const fmtX = (num, den) => {
+            if (!den || den === 0) return '<span class="ratio-na">N/A</span>';
+            return (num / den).toFixed(2) + 'x';
+        };
+        const cls = (num, den, higherIsBetter = true) => {
+            if (!den || den === 0) return '';
+            const val = num / den;
+            if (higherIsBetter) return val >= 0 ? ' ratio-positive' : ' ratio-negative';
+            return val <= 1 ? ' ratio-positive' : ' ratio-negative';
+        };
+
+        const monthLabel = Utils.formatMonthDisplay(data.asOfMonth);
+
+        let html = `
+        <div class="bs-ratios-header">
+            <h3>Financial Ratios</h3>
+            <span class="bs-ratios-period">P&amp;L cumulative through ${monthLabel}</span>
+        </div>
+        <div class="bs-ratios-body">`;
+
+        // Profitability
+        html += `
+        <div class="bs-ratios-group">
+            <div class="bs-ratios-group-title">Profitability</div>
+            <div class="bs-ratios-grid">
+                <div class="bs-ratio-card">
+                    <span class="bs-ratio-label">Gross Margin</span>
+                    <span class="bs-ratio-value${cls(totalGP, totalRevenue)}">${fmtPct(totalGP, totalRevenue)}</span>
+                    <span class="bs-ratio-formula">Gross Profit / Revenue</span>
+                </div>
+                <div class="bs-ratio-card">
+                    <span class="bs-ratio-label">Net Profit Margin</span>
+                    <span class="bs-ratio-value${cls(totalNIAT, totalRevenue)}">${fmtPct(totalNIAT, totalRevenue)}</span>
+                    <span class="bs-ratio-formula">Net Income (AT) / Revenue</span>
+                </div>
+                <div class="bs-ratio-card">
+                    <span class="bs-ratio-label">Return on Equity</span>
+                    <span class="bs-ratio-value${cls(totalNIAT, totalEquity)}">${fmtPct(totalNIAT, totalEquity)}</span>
+                    <span class="bs-ratio-formula">Net Income (AT) / Total Equity</span>
+                </div>
+                <div class="bs-ratio-card">
+                    <span class="bs-ratio-label">Return on Assets</span>
+                    <span class="bs-ratio-value${cls(totalNIAT, totalAssets)}">${fmtPct(totalNIAT, totalAssets)}</span>
+                    <span class="bs-ratio-formula">Net Income (AT) / Total Assets</span>
+                </div>
+            </div>
+        </div>`;
+
+        // Liquidity
+        const liqVal = currentLiabilities > 0 ? fmtX(currentAssets, currentLiabilities) : '<span class="ratio-na">N/A</span>';
+        const liqCls = currentLiabilities > 0
+            ? ((currentAssets / currentLiabilities) >= 1 ? ' ratio-positive' : ' ratio-negative')
+            : '';
+
+        html += `
+        <div class="bs-ratios-group">
+            <div class="bs-ratios-group-title">Liquidity</div>
+            <div class="bs-ratios-grid">
+                <div class="bs-ratio-card">
+                    <span class="bs-ratio-label">Current Ratio</span>
+                    <span class="bs-ratio-value${liqCls}">${liqVal}</span>
+                    <span class="bs-ratio-formula">Current Assets / Current Liabilities</span>
+                </div>
+                <div class="bs-ratio-card">
+                    <span class="bs-ratio-label">Quick Ratio</span>
+                    <span class="bs-ratio-value${liqCls}">${liqVal}</span>
+                    <span class="bs-ratio-formula">Same as Current Ratio (no inventory tracked)</span>
+                </div>
+            </div>
+        </div>`;
+
+        // Solvency & Leverage
+        const deVal = totalEquity !== 0 ? fmtX(totalLiabilities, totalEquity) : '<span class="ratio-na">N/A</span>';
+        const deCls = totalEquity !== 0
+            ? ((totalLiabilities / totalEquity) <= 2 ? ' ratio-positive' : ' ratio-negative')
+            : '';
+
+        html += `
+        <div class="bs-ratios-group">
+            <div class="bs-ratios-group-title">Solvency &amp; Leverage</div>
+            <div class="bs-ratios-grid">
+                <div class="bs-ratio-card">
+                    <span class="bs-ratio-label">Debt-to-Equity</span>
+                    <span class="bs-ratio-value${deCls}">${deVal}</span>
+                    <span class="bs-ratio-formula">Total Liabilities / Total Equity</span>
+                </div>
+                <div class="bs-ratio-card">
+                    <span class="bs-ratio-label">Interest Coverage</span>
+                    <span class="bs-ratio-value${totalLoanInterest > 0 ? cls(totalNIBT, totalLoanInterest) : ''}">${totalLoanInterest > 0 ? fmtX(totalNIBT, totalLoanInterest) : '<span class="ratio-na">No debt</span>'}</span>
+                    <span class="bs-ratio-formula">Net Income (BT) / Loan Interest</span>
+                </div>
+            </div>
+        </div>`;
+
+        // Efficiency
+        html += `
+        <div class="bs-ratios-group">
+            <div class="bs-ratios-group-title">Efficiency</div>
+            <div class="bs-ratios-grid">
+                <div class="bs-ratio-card">
+                    <span class="bs-ratio-label">Asset Turnover</span>
+                    <span class="bs-ratio-value${cls(totalRevenue, totalAssets)}">${fmtX(totalRevenue, totalAssets)}</span>
+                    <span class="bs-ratio-formula">Revenue / Total Assets</span>
+                </div>
+            </div>
+        </div>`;
+
+        html += '</div>';
+        container.innerHTML = html;
     },
 
     /**
